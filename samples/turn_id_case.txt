@@ -1,0 +1,37 @@
+# Sample case file for TURN_ID
+# format: key=value
+
+stock.type=CYLINDER
+stock.p1=30.0
+stock.p2=100.0
+stock.p3=0.0
+stock.axis.origin=0.0,0.0,0.0
+stock.axis.dir=0.0,0.0,1.0
+stock.axis.xdir=1.0,0.0,0.0
+
+feature.type=TURN_ID
+feature.turnId.profile.count=6
+feature.turnId.profile.0.z=0.0
+feature.turnId.profile.0.radius=20.0
+feature.turnId.profile.1.z=25.0
+feature.turnId.profile.1.radius=20.0
+feature.turnId.profile.2.z=25.0
+feature.turnId.profile.2.radius=15.0
+feature.turnId.profile.3.z=60.0
+feature.turnId.profile.3.radius=15.0
+feature.turnId.profile.4.z=60.0
+feature.turnId.profile.4.radius=10.0
+feature.turnId.profile.5.z=90.0
+feature.turnId.profile.5.radius=10.0
+feature.turnId.axis.origin=0.0,0.0,0.0
+feature.turnId.axis.dir=0.0,0.0,1.0
+feature.turnId.axis.xdir=1.0,0.0,0.0
+
+output.linearDeflection=0.1
+output.angularDeflection=0.5
+output.parallel=1
+output.dir=out
+output.stepFile=turn_id_result.step
+output.stlFile=turn_id_result.stl
+output.deltaStepFile=turn_id_delta.step
+output.deltaStlFile=turn_id_delta.stl

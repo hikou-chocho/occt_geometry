@@ -1,0 +1,27 @@
+# Sample case file for POCKET_RECT
+# format: key=value
+
+stock.type=BOX
+stock.p1=100.0
+stock.p2=80.0
+stock.p3=20.0
+stock.axis.origin=0.0,0.0,0.0
+stock.axis.dir=0.0,0.0,1.0
+stock.axis.xdir=1.0,0.0,0.0
+
+feature.type=POCKET_RECT
+feature.pocketRect.width=40.0
+feature.pocketRect.height=30.0
+feature.pocketRect.depth=8.0
+feature.pocketRect.axis.origin=50.0,40.0,20.0
+feature.pocketRect.axis.dir=0.0,0.0,-1.0
+feature.pocketRect.axis.xdir=1.0,0.0,0.0
+
+output.linearDeflection=0.1
+output.angularDeflection=0.5
+output.parallel=1
+output.dir=out
+output.stepFile=box_pocket_rect.step
+output.stlFile=box_pocket_rect.stl
+output.deltaStepFile=box_pocket_rect_delta.step
+output.deltaStlFile=box_pocket_rect_delta.stl

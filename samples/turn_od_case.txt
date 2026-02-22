@@ -1,0 +1,37 @@
+# Sample case file for TURN_OD
+# format: key=value
+
+stock.type=CYLINDER
+stock.p1=30.0
+stock.p2=100.0
+stock.p3=0.0
+stock.axis.origin=0.0,0.0,0.0
+stock.axis.dir=0.0,0.0,1.0
+stock.axis.xdir=1.0,0.0,0.0
+
+feature.type=TURN_OD
+feature.turnOd.profile.count=6
+feature.turnOd.profile.0.z=0.0
+feature.turnOd.profile.0.radius=15.0
+feature.turnOd.profile.1.z=20.0
+feature.turnOd.profile.1.radius=15.0
+feature.turnOd.profile.2.z=20.0
+feature.turnOd.profile.2.radius=20.0
+feature.turnOd.profile.3.z=40.0
+feature.turnOd.profile.3.radius=20.0
+feature.turnOd.profile.4.z=40.0
+feature.turnOd.profile.4.radius=25.0
+feature.turnOd.profile.5.z=80.0
+feature.turnOd.profile.5.radius=25.0
+feature.turnOd.axis.origin=0.0,0.0,100.0
+feature.turnOd.axis.dir=0.0,0.0,-1.0
+feature.turnOd.axis.xdir=1.0,0.0,0.0
+
+output.linearDeflection=0.1
+output.angularDeflection=0.5
+output.parallel=1
+output.dir=out
+output.stepFile=turn_od_result.step
+output.stlFile=turn_od_result.stl
+output.deltaStepFile=turn_od_delta.step
+output.deltaStlFile=turn_od_delta.stl
