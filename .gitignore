@@ -39,3 +39,4 @@ Testing/
 out/build/x64-Debug/
 obj/
 bin/
+/csharp/L1GeometryAdapter/WebL1Geometry/output/

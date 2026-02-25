@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
+    <OutputType>Library</OutputType>
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
@@ -14,13 +14,7 @@
 
   <Target Name="CopyNativeDlls" AfterTargets="Build">
     <Message Text="Copying native DLLs to $(OutDir)" Importance="High" />
-    <Copy
-      SourceFiles="@(NativeDlls)"
-      DestinationFolder="$(OutDir)"
-      SkipUnchangedFiles="true"
-      Condition="'@(NativeDlls)' != ''" />
-    <Warning
-      Text="Native DLL (*.dll) が見つかりませんでした。"
-      Condition="'@(NativeDlls)' == ''" />
+    <Copy SourceFiles="@(NativeDlls)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" Condition="'@(NativeDlls)' != ''" />
+    <Warning Text="Native DLL (*.dll) が見つかりませんでした。" Condition="'@(NativeDlls)' == ''" />
   </Target>
 </Project>
