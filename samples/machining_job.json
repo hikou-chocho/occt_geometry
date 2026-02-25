@@ -1,0 +1,62 @@
+{
+  "stock": {
+    "type": "BOX",
+    "p1": 100.0,
+    "p2": 80.0,
+    "p3": 20.0,
+    "axis": {
+      "origin": [0.0, 0.0, 0.0],
+      "dir":    [0.0, 0.0, 1.0],
+      "xdir":   [1.0, 0.0, 0.0]
+    }
+  },
+  "features": [
+    {
+      "type": "DRILL",
+      "drill": {
+        "radius": 8.0,
+        "depth":  12.0,
+        "axis": {
+          "origin": [30.0, 20.0, 20.0],
+          "dir":    [0.0,  0.0, -1.0],
+          "xdir":   [1.0,  0.0,  0.0]
+        }
+      }
+    },
+    {
+      "type": "DRILL",
+      "drill": {
+        "radius": 8.0,
+        "depth":  12.0,
+        "axis": {
+          "origin": [70.0, 20.0, 20.0],
+          "dir":    [0.0,  0.0, -1.0],
+          "xdir":   [1.0,  0.0,  0.0]
+        }
+      }
+    },
+    {
+      "type": "POCKET_RECT",
+      "pocketRect": {
+        "width":  40.0,
+        "height": 30.0,
+        "depth":   8.0,
+        "axis": {
+          "origin": [50.0, 55.0, 20.0],
+          "dir":    [0.0,  0.0, -1.0],
+          "xdir":   [1.0,  0.0,  0.0]
+        }
+      }
+    }
+  ],
+  "output": {
+    "linearDeflection":  0.1,
+    "angularDeflection": 0.5,
+    "parallel": 1,
+    "dir": "out",
+    "stepFile":      "result.step",
+    "stlFile":       "result.stl",
+    "deltaStepFile": "delta.step",
+    "deltaStlFile":  "delta.stl"
+  }
+}

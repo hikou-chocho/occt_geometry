@@ -37,3 +37,5 @@ Testing/
 *.temp
 *.cache
 out/build/x64-Debug/
+obj/
+bin/
