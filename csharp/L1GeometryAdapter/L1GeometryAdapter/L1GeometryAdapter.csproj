@@ -8,4 +8,19 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
+  <ItemGroup>
+    <NativeDlls Include="$(MSBuildProjectDirectory)\..\..\..\out\build\x64-$(Configuration)\*.dll" />
+  </ItemGroup>
+
+  <Target Name="CopyNativeDlls" AfterTargets="Build">
+    <Message Text="Copying native DLLs to $(OutDir)" Importance="High" />
+    <Copy
+      SourceFiles="@(NativeDlls)"
+      DestinationFolder="$(OutDir)"
+      SkipUnchangedFiles="true"
+      Condition="'@(NativeDlls)' != ''" />
+    <Warning
+      Text="Native DLL (*.dll) が見つかりませんでした。"
+      Condition="'@(NativeDlls)' == ''" />
+  </Target>
 </Project>

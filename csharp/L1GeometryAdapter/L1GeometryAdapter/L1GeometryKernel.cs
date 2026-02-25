@@ -182,14 +182,16 @@ namespace L1GeometryAdapter
         {
             ThrowIfDisposed();
             var results = new List<OperationResult>();
+            int currentShapeId = stockId;
             foreach (var feature in features)
             {
                 var f = feature;
-                int rc = L1GeometryKernelNative.L1_ApplyFeature(_handle, stockId, ref f, out OperationResult result);
+                int rc = L1GeometryKernelNative.L1_ApplyFeature(_handle, currentShapeId, ref f, out OperationResult result);
                 ThrowIfError(rc, nameof(L1GeometryKernelNative.L1_ApplyFeature));
                 _trackedShapes.Push(result.ResultShapeId);
                 _trackedShapes.Push(result.DeltaShapeId);
                 results.Add(result);
+                currentShapeId = result.ResultShapeId;
             }
             return results;
         }

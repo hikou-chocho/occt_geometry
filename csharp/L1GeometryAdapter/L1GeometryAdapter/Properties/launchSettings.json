@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "L1GeometryAdapter": {
+      "commandName": "Project",
+      "commandLineArgs": "..\\..\\..\\..\\..\\..\\samples\\lathe_job.json"
+    }
+  }
+}
