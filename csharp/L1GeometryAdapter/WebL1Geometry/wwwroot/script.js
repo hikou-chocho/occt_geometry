@@ -134,12 +134,23 @@ async function runPipeline() {
       return;
     }
 
-    const stlUrl = `${body.finalStlUrl}?t=${Date.now()}`;
     setStatus(`STL 読み込み: ${body.finalStlUrl}`);
-    loadStl(stlUrl);
+    await loadStlFromApi(body.finalStlUrl);
   } catch (error) {
     setStatus(`通信エラー: ${error.message}`);
   }
+}
+
+async function loadStlFromApi(url) {
+  const response = await fetch(`${url}?t=${Date.now()}`);
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `HTTP ${response.status}`);
+  }
+
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  loadStl(objectUrl, true);
 }
 
 function initThree() {
@@ -189,7 +200,7 @@ function animate() {
   renderer.render(scene, camera);
 }
 
-function loadStl(url) {
+function loadStl(url, revokeOnDone = false) {
   const loader = new STLLoader();
   loader.load(
     url,
@@ -215,9 +226,16 @@ function loadStl(url) {
       controls.target.copy(center);
       camera.position.set(center.x + size, center.y + size * 0.8, center.z + size);
       camera.lookAt(center);
+
+      if (revokeOnDone) {
+        URL.revokeObjectURL(url);
+      }
     },
     undefined,
     (error) => {
+      if (revokeOnDone) {
+        URL.revokeObjectURL(url);
+      }
       setStatus(`STL load error: ${error.message}`);
     }
   );

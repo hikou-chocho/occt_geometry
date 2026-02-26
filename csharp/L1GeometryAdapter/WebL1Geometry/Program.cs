@@ -17,6 +17,31 @@ app.UseStaticFiles(new StaticFileOptions
 	ContentTypeProvider = new FileExtensionContentTypeProvider(),
 });
 
+app.MapGet("/pipeline/final-stl/{runId}/{fileName}", (string runId, string fileName) =>
+{
+	var safeRunId = Path.GetFileName(runId);
+	if (string.IsNullOrWhiteSpace(safeRunId))
+		return Results.BadRequest(new { error = "Invalid runId." });
+
+	var safeFileName = SanitizeFileName(fileName, "result.stl");
+	var runDir = Path.Combine(outputRoot, safeRunId);
+	var filePath = Path.Combine(runDir, safeFileName);
+
+	if (!System.IO.File.Exists(filePath))
+		return Results.NotFound(new { error = "STL file not found." });
+
+	try
+	{
+		var bytes = System.IO.File.ReadAllBytes(filePath);
+		TryDeleteDirectory(runDir);
+		return Results.File(bytes, "model/stl", safeFileName);
+	}
+	catch (Exception ex)
+	{
+		return Results.Problem(title: "STL fetch failed", detail: ex.Message, statusCode: 500);
+	}
+});
+
 app.MapPost("/pipeline/run", (JobJsonModel request) =>
 {
 	try
@@ -59,7 +84,7 @@ app.MapPost("/pipeline/run", (JobJsonModel request) =>
 		{
 			RunId = runId,
 			FinalStepUrl = $"/output/{runId}/{stepFile}",
-			FinalStlUrl = $"/output/{runId}/{stlFile}",
+			FinalStlUrl = $"/pipeline/final-stl/{runId}/{stlFile}",
 			DeltaStepUrl = $"/output/{runId}/{deltaStepFile}",
 			DeltaStlUrl = $"/output/{runId}/{deltaStlFile}",
 		});
@@ -87,6 +112,18 @@ static string SanitizeFileName(string? value, string fallback)
 		nameOnly = nameOnly.Replace(invalid, '_');
 
 	return nameOnly;
+}
+
+static void TryDeleteDirectory(string path)
+{
+	try
+	{
+		if (Directory.Exists(path))
+			Directory.Delete(path, recursive: true);
+	}
+	catch
+	{
+	}
 }
 
 sealed class PipelineRunResponse
