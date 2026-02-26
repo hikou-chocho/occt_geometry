@@ -9,6 +9,7 @@ Directory.CreateDirectory(outputRoot);
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
+app.MapJobApi();
 
 app.UseStaticFiles(new StaticFileOptions
 {
