@@ -1,9 +1,11 @@
 #include "l1_geometry_kernel.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cctype>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
@@ -21,6 +23,11 @@ struct SampleCase {
   std::string deltaStepFileName;
   std::string deltaStlFileName;
 };
+
+double ElapsedMs(const std::chrono::steady_clock::time_point& begin,
+                 const std::chrono::steady_clock::time_point& end) {
+  return std::chrono::duration<double, std::milli>(end - begin).count();
+}
 
 bool Check(int code, const char* step) {
   if (code == 0) {
@@ -388,10 +395,14 @@ SampleCase LoadCaseFile(const std::filesystem::path& filePath) {
 }  // namespace
 
 int main(int argc, char* argv[]) {
+  using Clock = std::chrono::steady_clock;
+  const auto totalStart = Clock::now();
+
   const std::filesystem::path casePath = (argc >= 2)
       ? std::filesystem::path(argv[1])
       : std::filesystem::path("samples") / "box_mill_hole_case.txt";
 
+  const auto loadStart = Clock::now();
   SampleCase sample{};
   try {
     sample = LoadCaseFile(casePath);
@@ -400,6 +411,9 @@ int main(int argc, char* argv[]) {
     std::cerr << ex.what() << std::endl;
     return 1;
   }
+  const auto loadEnd = Clock::now();
+
+  const auto kernelStart = Clock::now();
 
   void* kernel = L1_CreateKernel();
   if (!kernel) {
@@ -412,6 +426,9 @@ int main(int argc, char* argv[]) {
     L1_DestroyKernel(kernel);
     return 1;
   }
+  const auto kernelEnd = Clock::now();
+
+  const auto applyStart = Clock::now();
 
   OperationResult result{};
   if (!Check(L1_ApplyFeature(kernel, stockId, &sample.feature, &result), "L1_ApplyFeature")) {
@@ -419,6 +436,7 @@ int main(int argc, char* argv[]) {
     L1_DestroyKernel(kernel);
     return 1;
   }
+  const auto applyEnd = Clock::now();
 
   std::filesystem::path outDir = std::filesystem::current_path() / sample.outputDir;
   std::filesystem::create_directories(outDir);
@@ -433,6 +451,8 @@ int main(int argc, char* argv[]) {
   const std::string stlPath = (outDir / sample.stlFileName).string();
   const std::string deltaStepPath = (outDir / sample.deltaStepFileName).string();
   const std::string deltaStlPath = (outDir / sample.deltaStlFileName).string();
+
+  const auto exportStart = Clock::now();
 
   if (!Check(L1_ExportShape(kernel, result.resultShapeId, &stepOpt, stepPath.c_str()), "L1_ExportShape(STEP)")) {
     L1_DeleteShape(kernel, result.deltaShapeId);
@@ -465,6 +485,7 @@ int main(int argc, char* argv[]) {
     L1_DestroyKernel(kernel);
     return 1;
   }
+  const auto exportEnd = Clock::now();
 
   L1_DeleteShape(kernel, result.deltaShapeId);
   L1_DeleteShape(kernel, result.resultShapeId);
@@ -475,5 +496,14 @@ int main(int argc, char* argv[]) {
   std::cout << "Generated: " << stlPath << std::endl;
   std::cout << "Generated: " << deltaStepPath << std::endl;
   std::cout << "Generated: " << deltaStlPath << std::endl;
+
+  const auto totalEnd = Clock::now();
+  std::cout << std::fixed << std::setprecision(3);
+  std::cout << "Timing(ms): LoadCaseFile=" << ElapsedMs(loadStart, loadEnd)
+            << ", CreateKernel+CreateStock=" << ElapsedMs(kernelStart, kernelEnd)
+            << ", ApplyFeature=" << ElapsedMs(applyStart, applyEnd)
+            << ", Export=" << ElapsedMs(exportStart, exportEnd)
+            << ", Total=" << ElapsedMs(totalStart, totalEnd) << std::endl;
+
   return 0;
 }
