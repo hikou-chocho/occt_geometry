@@ -355,6 +355,20 @@ SampleCase LoadCaseFile(const std::filesystem::path& filePath) {
     ParseVector3(Require(kv, "feature.turnId.axis.origin"), sample.feature.u.turnId.axis.origin);
     ParseVector3(Require(kv, "feature.turnId.axis.dir"), sample.feature.u.turnId.axis.dir);
     ParseVector3(Require(kv, "feature.turnId.axis.xdir"), sample.feature.u.turnId.axis.xdir);
+  } else if (featureType == "MILL_CONTOUR") {
+    sample.feature.type = FEAT_MILL_CONTOUR;
+    if (!BuildTurnProfileFromSegments(kv,
+                                      "feature.millContour",
+                                      &sample.feature.u.millContour.profile)) {
+      throw std::runtime_error("feature.millContour.profile.segment.count is required");
+    }
+    sample.feature.u.millContour.depth = std::stod(Require(kv, "feature.millContour.depth"));
+    ParseVector3(Require(kv, "feature.millContour.axis.origin"),
+                 sample.feature.u.millContour.axis.origin);
+    ParseVector3(Require(kv, "feature.millContour.axis.dir"),
+                 sample.feature.u.millContour.axis.dir);
+    ParseVector3(Require(kv, "feature.millContour.axis.xdir"),
+                 sample.feature.u.millContour.axis.xdir);
   } else {
     throw std::runtime_error("Unsupported feature.type in sample: " + featureType);
   }

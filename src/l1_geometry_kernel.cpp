@@ -1,9 +1,13 @@
 #include "l1_geometry_kernel.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <cmath>
+#include <filesystem>
+#include <fstream>
 #include <map>
 #include <memory>
+#include <string>
 #include <stdexcept>
 #include <vector>
 
@@ -15,6 +19,7 @@
 #include <BRepMesh_IncrementalMesh.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
 #include <BRepPrimAPI_MakeCylinder.hxx>
+#include <BRepPrimAPI_MakePrism.hxx>
 #include <BRepPrimAPI_MakeRevol.hxx>
 #include <TopoDS_Face.hxx>
 #include <gp_Ax2.hxx>
@@ -84,6 +89,46 @@ struct UvPoint {
   double v;
 };
 
+enum class PathFrameMode {
+  kTurnUv,
+  kPlanarUv
+};
+
+const char* kDebugPath2dDirEnv = "L1_DEBUG_PATH2D_DIR";
+int gDebugPath2dDumpCounter = 0;
+
+const char* PathFrameModeName(PathFrameMode mode) {
+  return mode == PathFrameMode::kTurnUv ? "turn_uv" : "planar_uv";
+}
+
+void DumpPath2dPolylineForDebug(const std::vector<UvPoint>& polyline, PathFrameMode mode) {
+  const char* rawDir = std::getenv(kDebugPath2dDirEnv);
+  if (!rawDir || *rawDir == '\0') {
+    return;
+  }
+
+  try {
+    std::filesystem::path outDir(rawDir);
+    std::filesystem::create_directories(outDir);
+
+    const int dumpIndex = ++gDebugPath2dDumpCounter;
+    const std::string fileName =
+        std::string("path2d_") + PathFrameModeName(mode) + "_" + std::to_string(dumpIndex) + ".csv";
+    const std::filesystem::path filePath = outDir / fileName;
+
+    std::ofstream ofs(filePath, std::ios::trunc);
+    if (!ofs) {
+      return;
+    }
+
+    ofs << "index,u,v\n";
+    for (size_t index = 0; index < polyline.size(); ++index) {
+      ofs << index << "," << polyline[index].u << "," << polyline[index].v << "\n";
+    }
+  } catch (...) {
+  }
+}
+
 double Distance2D(const UvPoint& a, const UvPoint& b) {
   const double du = a.u - b.u;
   const double dv = a.v - b.v;
@@ -94,11 +139,19 @@ bool NearlyEqual(const UvPoint& a, const UvPoint& b) {
   return Distance2D(a, b) <= kGeomTol;
 }
 
-gp_Pnt To3DPoint(const UvPoint& uv, const AxisDto& axis) {
+gp_Pnt To3DPoint(const UvPoint& uv, const AxisDto& axis, PathFrameMode mode) {
   gp_Pnt origin(axis.origin[0], axis.origin[1], axis.origin[2]);
-  gp_Dir udir(axis.dir[0], axis.dir[1], axis.dir[2]);
-  gp_Dir vdir(axis.xdir[0], axis.xdir[1], axis.xdir[2]);
-  gp_Vec offset = gp_Vec(udir) * uv.u + gp_Vec(vdir) * uv.v;
+  gp_Vec offset;
+  if (mode == PathFrameMode::kTurnUv) {
+    gp_Dir udir(axis.dir[0], axis.dir[1], axis.dir[2]);
+    gp_Dir vdir(axis.xdir[0], axis.xdir[1], axis.xdir[2]);
+    offset = gp_Vec(udir) * uv.u + gp_Vec(vdir) * uv.v;
+  } else {
+    gp_Dir xdir(axis.xdir[0], axis.xdir[1], axis.xdir[2]);
+    gp_Dir dir(axis.dir[0], axis.dir[1], axis.dir[2]);
+    gp_Dir ydir = dir.Crossed(xdir);
+    offset = gp_Vec(xdir) * uv.u + gp_Vec(ydir) * uv.v;
+  }
   return origin.Translated(offset);
 }
 
@@ -157,10 +210,9 @@ bool AppendArcPolyline(const Path2DSegmentDto& segment,
   return true;
 }
 
-bool BuildTurnToolFromPath(const Path2DProfileDto& profile,
-                           const AxisDto& axis,
-                           TopoDS_Shape* outTool,
-                           int* outErrorCode) {
+bool BuildClosedPathPolyline(const Path2DProfileDto& profile,
+                             std::vector<UvPoint>* outPolyline,
+                             int* outErrorCode) {
   if (profile.type != PROFILE_PATH_2D || profile.plane != PROFILE_PLANE_UV) {
     *outErrorCode = ERROR_INVALID_ARGUMENT;
     return false;
@@ -173,9 +225,9 @@ bool BuildTurnToolFromPath(const Path2DProfileDto& profile,
   const UvPoint start{profile.start.u, profile.start.v};
   UvPoint current = start;
 
-  std::vector<UvPoint> polyline;
-  polyline.reserve(static_cast<size_t>(profile.segmentCount) * 20U);
-  polyline.push_back(start);
+  outPolyline->clear();
+  outPolyline->reserve(static_cast<size_t>(profile.segmentCount) * 20U);
+  outPolyline->push_back(start);
 
   for (int index = 0; index < profile.segmentCount; ++index) {
     const Path2DSegmentDto& segment = profile.segments[index];
@@ -192,9 +244,9 @@ bool BuildTurnToolFromPath(const Path2DProfileDto& profile,
         *outErrorCode = ERROR_INVALID_ARGUMENT;
         return false;
       }
-      polyline.push_back(to);
+      outPolyline->push_back(to);
     } else if (segment.type == PATH_SEGMENT_ARC) {
-      if (!AppendArcPolyline(segment, &polyline, outErrorCode)) {
+      if (!AppendArcPolyline(segment, outPolyline, outErrorCode)) {
         return false;
       }
     } else {
@@ -209,14 +261,29 @@ bool BuildTurnToolFromPath(const Path2DProfileDto& profile,
     *outErrorCode = ERROR_INVALID_ARGUMENT;
     return false;
   }
-  if (!NearlyEqual(polyline.back(), start)) {
-    polyline.push_back(start);
+  if (!NearlyEqual(outPolyline->back(), start)) {
+    outPolyline->push_back(start);
   }
+
+  *outErrorCode = ERROR_OK;
+  return true;
+}
+
+bool BuildFaceFromPath(const Path2DProfileDto& profile,
+                       const AxisDto& axis,
+                       PathFrameMode mode,
+                       TopoDS_Face* outFace,
+                       int* outErrorCode) {
+  std::vector<UvPoint> polyline;
+  if (!BuildClosedPathPolyline(profile, &polyline, outErrorCode)) {
+    return false;
+  }
+  DumpPath2dPolylineForDebug(polyline, mode);
 
   BRepBuilderAPI_MakeWire wireBuilder;
   for (size_t index = 1; index < polyline.size(); ++index) {
-    const gp_Pnt p0 = To3DPoint(polyline[index - 1], axis);
-    const gp_Pnt p1 = To3DPoint(polyline[index], axis);
+    const gp_Pnt p0 = To3DPoint(polyline[index - 1], axis, mode);
+    const gp_Pnt p1 = To3DPoint(polyline[index], axis, mode);
     if (p0.Distance(p1) <= kGeomTol) {
       continue;
     }
@@ -241,15 +308,57 @@ bool BuildTurnToolFromPath(const Path2DProfileDto& profile,
     return false;
   }
 
+  *outFace = faceBuilder.Face();
+  *outErrorCode = ERROR_OK;
+  return true;
+}
+
+bool BuildTurnToolFromPath(const Path2DProfileDto& profile,
+                           const AxisDto& axis,
+                           TopoDS_Shape* outTool,
+                           int* outErrorCode) {
+  TopoDS_Face face;
+  if (!BuildFaceFromPath(profile, axis, PathFrameMode::kTurnUv, &face, outErrorCode)) {
+    return false;
+  }
+
   gp_Pnt origin(axis.origin[0], axis.origin[1], axis.origin[2]);
   gp_Dir dir(axis.dir[0], axis.dir[1], axis.dir[2]);
-  BRepPrimAPI_MakeRevol revol(faceBuilder.Face(), gp_Ax1(origin, dir), kTwoPi, true);
+  BRepPrimAPI_MakeRevol revol(face, gp_Ax1(origin, dir), kTwoPi, true);
   if (!revol.IsDone()) {
     *outErrorCode = ERROR_BOOLEAN_FAILED;
     return false;
   }
 
   *outTool = revol.Shape();
+  *outErrorCode = ERROR_OK;
+  return true;
+}
+
+bool BuildMillContourToolFromPath(const Path2DProfileDto& profile,
+                                  double depth,
+                                  const AxisDto& axis,
+                                  TopoDS_Shape* outTool,
+                                  int* outErrorCode) {
+  if (depth <= 0.0) {
+    *outErrorCode = ERROR_INVALID_ARGUMENT;
+    return false;
+  }
+
+  TopoDS_Face face;
+  if (!BuildFaceFromPath(profile, axis, PathFrameMode::kPlanarUv, &face, outErrorCode)) {
+    return false;
+  }
+
+  gp_Dir dir(axis.dir[0], axis.dir[1], axis.dir[2]);
+  gp_Vec prismVec = gp_Vec(dir) * depth;
+  BRepPrimAPI_MakePrism prism(face, prismVec, true, true);
+  if (!prism.IsDone()) {
+    *outErrorCode = ERROR_BOOLEAN_FAILED;
+    return false;
+  }
+
+  *outTool = prism.Shape();
   *outErrorCode = ERROR_OK;
   return true;
 }
@@ -367,6 +476,16 @@ int L1_ApplyFeature(void* kernel,
         const TurnIdFeatureDto& turn = feature->u.turnId;
         int buildError = ERROR_OK;
         if (!BuildTurnToolFromPath(turn.profile, turn.axis, &tool, &buildError)) {
+          outResult->errorCode = buildError;
+          return buildError;
+        }
+        break;
+      }
+      case FEAT_MILL_CONTOUR: {
+        const MillContourFeatureDto& millContour = feature->u.millContour;
+        int buildError = ERROR_OK;
+        if (!BuildMillContourToolFromPath(
+                millContour.profile, millContour.depth, millContour.axis, &tool, &buildError)) {
           outResult->errorCode = buildError;
           return buildError;
         }

@@ -37,7 +37,8 @@ typedef enum FeatureType {
   FEAT_MILL_HOLE = 1,
   FEAT_POCKET_RECT = 2,
   FEAT_TURN_OD = 3,
-  FEAT_TURN_ID = 4
+  FEAT_TURN_ID = 4,
+  FEAT_MILL_CONTOUR = 5
 } FeatureType;
 
 typedef struct MillHoleFeatureDto {
@@ -106,6 +107,12 @@ typedef struct TurnIdFeatureDto {
   AxisDto axis;
 } TurnIdFeatureDto;
 
+typedef struct MillContourFeatureDto {
+  Path2DProfileDto profile;
+  double depth;
+  AxisDto axis;
+} MillContourFeatureDto;
+
 typedef struct FeatureDto {
   FeatureType type;
   union {
@@ -113,6 +120,7 @@ typedef struct FeatureDto {
     PocketRectFeatureDto pocketRect;
     TurnOdFeatureDto turnOd;
     TurnIdFeatureDto turnId;
+    MillContourFeatureDto millContour;
   } u;
 } FeatureDto;
 
