@@ -79,8 +79,8 @@ public sealed class FeatureJsonModel
 	[JsonPropertyAttribute("type")]
 	public string Type { get; set; } = string.Empty;
 
-	[JsonPropertyAttribute("drill")]
-	public DrillJsonModel? Drill { get; set; }
+	[JsonPropertyAttribute("millHole")]
+	public MillHoleJsonModel? MillHole { get; set; }
 
 	[JsonPropertyAttribute("pocketRect")]
 	public PocketRectJsonModel? PocketRect { get; set; }
@@ -96,7 +96,7 @@ public sealed class FeatureJsonModel
 		var type = Type.ToUpperInvariant();
 		return type switch
 		{
-			"DRILL" => BuildDrill(),
+			"MILL_HOLE" => BuildMillHole(),
 			"POCKET_RECT" => BuildPocketRect(),
 			"TURN_OD" => BuildTurnOd(),
 			"TURN_ID" => BuildTurnId(),
@@ -104,15 +104,15 @@ public sealed class FeatureJsonModel
 		};
 	}
 
-	private FeatureDto BuildDrill()
+	private FeatureDto BuildMillHole()
 	{
-		if (Drill is null)
-			throw new InvalidOperationException("feature.drill is required for type DRILL.");
+		if (MillHole is null)
+			throw new InvalidOperationException("feature.millHole is required for type MILL_HOLE.");
 
 		return new FeatureDto
 		{
-			Type = FeatureType.Drill,
-			Drill = Drill.ToKernel(),
+			Type = FeatureType.MillHole,
+			MillHole = MillHole.ToKernel(),
 		};
 	}
 
@@ -161,7 +161,7 @@ public sealed class FeatureJsonModel
 	}
 }
 
-public sealed class DrillJsonModel
+public sealed class MillHoleJsonModel
 {
 	[JsonPropertyAttribute("radius")]
 	public double Radius { get; set; }
@@ -172,9 +172,9 @@ public sealed class DrillJsonModel
 	[JsonPropertyAttribute("axis")]
 	public AxisJsonModel Axis { get; set; } = new();
 
-	public DrillFeatureDto ToKernel()
+	public MillHoleFeatureDto ToKernel()
 	{
-		return new DrillFeatureDto
+		return new MillHoleFeatureDto
 		{
 			Radius = Radius,
 			Depth = Depth,

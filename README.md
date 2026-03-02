@@ -37,10 +37,10 @@ cmake --build build --config Release
 ## Run sample
 
 ```powershell
-.\build\Release\occt_geometry_sample.exe .\samples\box_drill_case.txt
+.\build\Release\occt_geometry_sample.exe .\samples\box_mill_hole_case.txt
 ```
 
-入力は `samples/box_drill_case.txt`（key=value）です。引数省略時も同ファイルを既定で読み込みます。
+入力は `samples/box_mill_hole_case.txt`（key=value）です。引数省略時も同ファイルを既定で読み込みます。
 
 追加ケース:
 
@@ -49,5 +49,5 @@ cmake --build build --config Release
 
 実行すると、`output.dir` で指定したフォルダ（既定 `out`）に以下を出力します。
 
-- `box_drill.step`
-- `box_drill.stl`
+- `box_mill_hole.step`
+- `box_mill_hole.stl`

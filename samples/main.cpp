@@ -132,13 +132,13 @@ SampleCase LoadCaseFile(const std::filesystem::path& filePath) {
   ParseVector3(Require(kv, "stock.axis.xdir"), sample.stock.axis.xdir);
 
   const std::string featureType = Require(kv, "feature.type");
-  if (featureType == "DRILL") {
-    sample.feature.type = FEAT_DRILL;
-    sample.feature.u.drill.radius = std::stod(Require(kv, "feature.drill.radius"));
-    sample.feature.u.drill.depth = std::stod(Require(kv, "feature.drill.depth"));
-    ParseVector3(Require(kv, "feature.drill.axis.origin"), sample.feature.u.drill.axis.origin);
-    ParseVector3(Require(kv, "feature.drill.axis.dir"), sample.feature.u.drill.axis.dir);
-    ParseVector3(Require(kv, "feature.drill.axis.xdir"), sample.feature.u.drill.axis.xdir);
+  if (featureType == "MILL_HOLE") {
+    sample.feature.type = FEAT_MILL_HOLE;
+    sample.feature.u.millHole.radius = std::stod(Require(kv, "feature.millHole.radius"));
+    sample.feature.u.millHole.depth = std::stod(Require(kv, "feature.millHole.depth"));
+    ParseVector3(Require(kv, "feature.millHole.axis.origin"), sample.feature.u.millHole.axis.origin);
+    ParseVector3(Require(kv, "feature.millHole.axis.dir"), sample.feature.u.millHole.axis.dir);
+    ParseVector3(Require(kv, "feature.millHole.axis.xdir"), sample.feature.u.millHole.axis.xdir);
   } else if (featureType == "POCKET_RECT") {
     sample.feature.type = FEAT_POCKET_RECT;
     sample.feature.u.pocketRect.width = std::stod(Require(kv, "feature.pocketRect.width"));
@@ -218,7 +218,7 @@ SampleCase LoadCaseFile(const std::filesystem::path& filePath) {
 int main(int argc, char* argv[]) {
   const std::filesystem::path casePath = (argc >= 2)
       ? std::filesystem::path(argv[1])
-      : std::filesystem::path("samples") / "box_drill_case.txt";
+      : std::filesystem::path("samples") / "box_mill_hole_case.txt";
 
   SampleCase sample{};
   try {

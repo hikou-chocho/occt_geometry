@@ -42,11 +42,11 @@ internal static class JobValidator
 
 			switch (featureType)
 			{
-				case "DRILL":
-					if (feature.Drill is null)
-						errors.Add(Error("MISSING_PAYLOAD", $"{basePath}.drill", "feature.drill is required for type DRILL."));
+				case "MILL_HOLE":
+					if (feature.MillHole is null)
+						errors.Add(Error("MISSING_PAYLOAD", $"{basePath}.millHole", "feature.millHole is required for type MILL_HOLE."));
 					else
-						ValidateAxis(feature.Drill.Axis, $"{basePath}.drill.axis", errors);
+						ValidateAxis(feature.MillHole.Axis, $"{basePath}.millHole.axis", errors);
 					break;
 
 				case "POCKET_RECT":

@@ -33,14 +33,14 @@ namespace L1GeometryAdapter
 
     public enum FeatureType : int
     {
-        Drill      = 1,
+        MillHole   = 1,
         PocketRect = 2,
         TurnOd     = 3,
         TurnId     = 4,
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    public struct DrillFeatureDto
+    public struct MillHoleFeatureDto
     {
         public double Radius;
         public double Depth;
@@ -83,7 +83,7 @@ namespace L1GeometryAdapter
     public struct FeatureDto
     {
         [FieldOffset(0)] public FeatureType Type;
-        [FieldOffset(8)] public DrillFeatureDto Drill;
+        [FieldOffset(8)] public MillHoleFeatureDto MillHole;
         [FieldOffset(8)] public PocketRectFeatureDto PocketRect;
         [FieldOffset(8)] public TurnOdFeatureDto TurnOd;
         [FieldOffset(8)] public TurnIdFeatureDto TurnId;

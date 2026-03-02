@@ -153,7 +153,7 @@ internal static class JobApiExtensions
 			var feature = request.Feature;
 			feature.Type = (feature.Type ?? string.Empty).ToUpperInvariant();
 
-			var validTypes = new HashSet<string> { "DRILL", "POCKET_RECT", "TURN_OD", "TURN_ID" };
+			var validTypes = new HashSet<string> { "MILL_HOLE", "POCKET_RECT", "TURN_OD", "TURN_ID" };
 			if (!validTypes.Contains(feature.Type))
 			{
 				return Results.Ok(new JobApiResponse

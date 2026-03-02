@@ -34,17 +34,17 @@ typedef struct StockDto {
 } StockDto;
 
 typedef enum FeatureType {
-  FEAT_DRILL = 1,
+  FEAT_MILL_HOLE = 1,
   FEAT_POCKET_RECT = 2,
   FEAT_TURN_OD = 3,
   FEAT_TURN_ID = 4
 } FeatureType;
 
-typedef struct DrillFeatureDto {
+typedef struct MillHoleFeatureDto {
   double radius;
   double depth;
   AxisDto axis;
-} DrillFeatureDto;
+} MillHoleFeatureDto;
 
 typedef struct PocketRectFeatureDto {
   double width;
@@ -76,7 +76,7 @@ typedef struct TurnIdFeatureDto {
 typedef struct FeatureDto {
   FeatureType type;
   union {
-    DrillFeatureDto drill;
+    MillHoleFeatureDto millHole;
     PocketRectFeatureDto pocketRect;
     TurnOdFeatureDto turnOd;
     TurnIdFeatureDto turnId;

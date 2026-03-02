@@ -18,7 +18,7 @@
 
 `features[].type` は discriminator として扱う。
 
-- `DRILL`（`drill` 必須）
+- `MILL_HOLE`（`millHole` 必須）
 - `POCKET_RECT`（`pocketRect` 必須）
 - `TURN_OD`（`turnOd` 必須）
 - `TURN_ID`（`turnId` 必須）
@@ -156,7 +156,7 @@ JSON ファイルから `job` を復元。
       },
       "required": ["z", "radius"]
     },
-    "DrillPayload": {
+    "MillHolePayload": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -197,10 +197,10 @@ JSON ファイルから `job` を復元。
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "type": { "const": "DRILL" },
-            "drill": { "$ref": "#/definitions/DrillPayload" }
+            "type": { "const": "MILL_HOLE" },
+            "millHole": { "$ref": "#/definitions/MillHolePayload" }
           },
-          "required": ["type", "drill"]
+          "required": ["type", "millHole"]
         },
         {
           "type": "object",

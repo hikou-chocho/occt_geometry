@@ -16,8 +16,8 @@ const defaultJob = {
   },
   features: [
     {
-      type: "DRILL",
-      drill: {
+      type: "MILL_HOLE",
+      millHole: {
         radius: 8.0,
         depth: 12.0,
         axis: {
@@ -28,8 +28,8 @@ const defaultJob = {
       }
     },
     {
-      type: "DRILL",
-      drill: {
+      type: "MILL_HOLE",
+      millHole: {
         radius: 8.0,
         depth: 12.0,
         axis: {

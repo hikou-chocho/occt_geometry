@@ -139,16 +139,16 @@ int L1_ApplyFeature(void* kernel,
 
     TopoDS_Shape tool;
     switch (feature->type) {
-      case FEAT_DRILL: {
-        const DrillFeatureDto& drill = feature->u.drill;
-        if (drill.radius <= 0.0 || drill.depth <= 0.0) {
+      case FEAT_MILL_HOLE: {
+        const MillHoleFeatureDto& millHole = feature->u.millHole;
+        if (millHole.radius <= 0.0 || millHole.depth <= 0.0) {
           outResult->errorCode = ERROR_INVALID_ARGUMENT;
           return ERROR_INVALID_ARGUMENT;
         }
 
-        gp_Pnt origin(drill.axis.origin[0], drill.axis.origin[1], drill.axis.origin[2]);
-        gp_Dir dir(drill.axis.dir[0], drill.axis.dir[1], drill.axis.dir[2]);
-        tool = BRepPrimAPI_MakeCylinder(gp_Ax2(origin, dir), drill.radius, drill.depth).Shape();
+        gp_Pnt origin(millHole.axis.origin[0], millHole.axis.origin[1], millHole.axis.origin[2]);
+        gp_Dir dir(millHole.axis.dir[0], millHole.axis.dir[1], millHole.axis.dir[2]);
+        tool = BRepPrimAPI_MakeCylinder(gp_Ax2(origin, dir), millHole.radius, millHole.depth).Shape();
         break;
       }
       case FEAT_POCKET_RECT: {
