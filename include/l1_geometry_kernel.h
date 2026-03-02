@@ -53,23 +53,56 @@ typedef struct PocketRectFeatureDto {
   AxisDto axis;
 } PocketRectFeatureDto;
 
-#define L1_TURN_OD_PROFILE_MAX 64
+#define L1_PATH2D_SEGMENT_MAX 128
+
+typedef enum ProfileType {
+  PROFILE_PATH_2D = 1
+} ProfileType;
+
+typedef enum ProfilePlane {
+  PROFILE_PLANE_UV = 1
+} ProfilePlane;
+
+typedef struct Path2DPointDto {
+  double u;
+  double v;
+} Path2DPointDto;
+
+typedef enum Path2DSegmentType {
+  PATH_SEGMENT_LINE = 1,
+  PATH_SEGMENT_ARC = 2,
+  PATH_SEGMENT_SPLINE = 3
+} Path2DSegmentType;
+
+typedef enum ArcDirection {
+  ARC_DIR_CW = 1,
+  ARC_DIR_CCW = 2
+} ArcDirection;
+
+typedef struct Path2DSegmentDto {
+  Path2DSegmentType type;
+  Path2DPointDto from;
+  Path2DPointDto to;
+  Path2DPointDto center;
+  ArcDirection arcDirection;
+} Path2DSegmentDto;
+
+typedef struct Path2DProfileDto {
+  ProfileType type;
+  ProfilePlane plane;
+  Path2DPointDto start;
+  int segmentCount;
+  Path2DSegmentDto segments[L1_PATH2D_SEGMENT_MAX];
+  int closed;
+} Path2DProfileDto;
 
 typedef struct TurnOdFeatureDto {
-  double targetDiameter;
-  double length;
-  int profileCount;
-  double profileZ[L1_TURN_OD_PROFILE_MAX];
-  double profileRadius[L1_TURN_OD_PROFILE_MAX];
+  Path2DProfileDto profile;
   AxisDto axis;
 } TurnOdFeatureDto;
 
 typedef struct TurnIdFeatureDto {
-  double targetDiameter;
-  double length;
-  int profileCount;
-  double profileZ[L1_TURN_OD_PROFILE_MAX];
-  double profileRadius[L1_TURN_OD_PROFILE_MAX];
+  Path2DProfileDto profile;
   AxisDto axis;
 } TurnIdFeatureDto;
 

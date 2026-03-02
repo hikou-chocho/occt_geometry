@@ -66,6 +66,24 @@ void ParseVector3(const std::string& text, double dst[3]) {
   }
 }
 
+void ParseUvPoint(const std::string& text, Path2DPointDto* dst) {
+  std::stringstream ss(text);
+  std::string token;
+  if (!std::getline(ss, token, ',')) {
+    throw std::runtime_error("Expected u,v point: " + text);
+  }
+  dst->u = std::stod(Trim(token));
+
+  if (!std::getline(ss, token, ',')) {
+    throw std::runtime_error("Expected u,v point: " + text);
+  }
+  dst->v = std::stod(Trim(token));
+
+  if (std::getline(ss, token, ',')) {
+    throw std::runtime_error("Too many u,v components: " + text);
+  }
+}
+
 std::unordered_map<std::string, std::string> LoadKeyValues(const std::filesystem::path& filePath) {
   std::ifstream ifs(filePath);
   if (!ifs) {
@@ -111,6 +129,123 @@ const std::string* Find(const std::unordered_map<std::string, std::string>& kv, 
   return &it->second;
 }
 
+bool AppendLine(Path2DProfileDto* profile, const Path2DPointDto& from, const Path2DPointDto& to) {
+  if (profile->segmentCount >= L1_PATH2D_SEGMENT_MAX) {
+    return false;
+  }
+  Path2DSegmentDto& segment = profile->segments[profile->segmentCount++];
+  segment.type = PATH_SEGMENT_LINE;
+  segment.from = from;
+  segment.to = to;
+  segment.center = {0.0, 0.0};
+  segment.arcDirection = ARC_DIR_CCW;
+  return true;
+}
+
+bool BuildTurnProfileFromLegacy(const double* profileZ,
+                                const double* profileRadius,
+                                int count,
+                                bool isOuterDiameter,
+                                double boundaryRadius,
+                                Path2DProfileDto* outProfile) {
+  if (count < 2 || count > L1_PATH2D_SEGMENT_MAX - 3) {
+    return false;
+  }
+
+  outProfile->type = PROFILE_PATH_2D;
+  outProfile->plane = PROFILE_PLANE_UV;
+  outProfile->closed = 1;
+  outProfile->segmentCount = 0;
+  outProfile->start = {profileZ[0], isOuterDiameter ? boundaryRadius : 0.0};
+
+  Path2DPointDto current = outProfile->start;
+  Path2DPointDto next{profileZ[count - 1], current.v};
+  if (!AppendLine(outProfile, current, next)) {
+    return false;
+  }
+  current = next;
+
+  next = {profileZ[count - 1], profileRadius[count - 1]};
+  if (!AppendLine(outProfile, current, next)) {
+    return false;
+  }
+  current = next;
+
+  for (int index = count - 2; index >= 0; --index) {
+    next = {profileZ[index], profileRadius[index]};
+    if (!AppendLine(outProfile, current, next)) {
+      return false;
+    }
+    current = next;
+  }
+
+  if (!AppendLine(outProfile, current, outProfile->start)) {
+    return false;
+  }
+
+  return true;
+}
+
+bool BuildTurnProfileFromSegments(const std::unordered_map<std::string, std::string>& kv,
+                                  const std::string& prefix,
+                                  Path2DProfileDto* outProfile) {
+  const std::string* segmentCountText = Find(kv, prefix + ".profile.segment.count");
+  if (!segmentCountText) {
+    return false;
+  }
+
+  const int segmentCount = std::stoi(*segmentCountText);
+  if (segmentCount <= 0 || segmentCount > L1_PATH2D_SEGMENT_MAX) {
+    throw std::runtime_error(prefix + ".profile.segment.count out of range");
+  }
+
+  const std::string profileType = Require(kv, prefix + ".profile.type");
+  if (profileType != "PATH_2D") {
+    throw std::runtime_error(prefix + ".profile.type must be PATH_2D");
+  }
+  const std::string plane = Require(kv, prefix + ".profile.plane");
+  if (plane != "UV") {
+    throw std::runtime_error(prefix + ".profile.plane must be UV");
+  }
+
+  outProfile->type = PROFILE_PATH_2D;
+  outProfile->plane = PROFILE_PLANE_UV;
+  outProfile->segmentCount = segmentCount;
+  outProfile->closed = ParseBool01(Require(kv, prefix + ".profile.closed")) ? 1 : 0;
+
+  ParseUvPoint(Require(kv, prefix + ".profile.start"), &outProfile->start);
+
+  for (int index = 0; index < segmentCount; ++index) {
+    const std::string segmentPrefix = prefix + ".profile.segment." + std::to_string(index);
+    Path2DSegmentDto& segment = outProfile->segments[index];
+
+    const std::string segmentType = Require(kv, segmentPrefix + ".type");
+    if (segmentType == "LINE") {
+      segment.type = PATH_SEGMENT_LINE;
+      segment.arcDirection = ARC_DIR_CCW;
+      segment.center = {0.0, 0.0};
+    } else if (segmentType == "ARC") {
+      segment.type = PATH_SEGMENT_ARC;
+      const std::string arcDirection = Require(kv, segmentPrefix + ".arcDirection");
+      if (arcDirection == "CW") {
+        segment.arcDirection = ARC_DIR_CW;
+      } else if (arcDirection == "CCW") {
+        segment.arcDirection = ARC_DIR_CCW;
+      } else {
+        throw std::runtime_error(segmentPrefix + ".arcDirection must be CW or CCW");
+      }
+      ParseUvPoint(Require(kv, segmentPrefix + ".center"), &segment.center);
+    } else {
+      throw std::runtime_error(segmentPrefix + ".type must be LINE or ARC");
+    }
+
+    ParseUvPoint(Require(kv, segmentPrefix + ".from"), &segment.from);
+    ParseUvPoint(Require(kv, segmentPrefix + ".to"), &segment.to);
+  }
+
+  return true;
+}
+
 SampleCase LoadCaseFile(const std::filesystem::path& filePath) {
   const auto kv = LoadKeyValues(filePath);
 
@@ -149,50 +284,73 @@ SampleCase LoadCaseFile(const std::filesystem::path& filePath) {
     ParseVector3(Require(kv, "feature.pocketRect.axis.xdir"), sample.feature.u.pocketRect.axis.xdir);
   } else if (featureType == "TURN_OD") {
     sample.feature.type = FEAT_TURN_OD;
-    sample.feature.u.turnOd.profileCount = 0;
-    const std::string* profileCount = Find(kv, "feature.turnOd.profile.count");
-    if (profileCount) {
+    if (!BuildTurnProfileFromSegments(kv, "feature.turnOd", &sample.feature.u.turnOd.profile)) {
+      const std::string* profileCount = Find(kv, "feature.turnOd.profile.count");
+      if (!profileCount) {
+        throw std::runtime_error("feature.turnOd.profile.segment.count or feature.turnOd.profile.count is required");
+      }
       const int count = std::stoi(*profileCount);
-      if (count < 2 || count > L1_TURN_OD_PROFILE_MAX) {
+      if (count < 2 || count > L1_PATH2D_SEGMENT_MAX - 3) {
         throw std::runtime_error("feature.turnOd.profile.count out of range");
       }
-      sample.feature.u.turnOd.profileCount = count;
+      double profileZ[L1_PATH2D_SEGMENT_MAX]{};
+      double profileRadius[L1_PATH2D_SEGMENT_MAX]{};
       for (int index = 0; index < count; ++index) {
         const std::string zKey = "feature.turnOd.profile." + std::to_string(index) + ".z";
         const std::string rKey = "feature.turnOd.profile." + std::to_string(index) + ".radius";
-        sample.feature.u.turnOd.profileZ[index] = std::stod(Require(kv, zKey));
-        sample.feature.u.turnOd.profileRadius[index] = std::stod(Require(kv, rKey));
+        profileZ[index] = std::stod(Require(kv, zKey));
+        profileRadius[index] = std::stod(Require(kv, rKey));
       }
-      sample.feature.u.turnOd.targetDiameter = sample.feature.u.turnOd.profileRadius[0] * 2.0;
-      sample.feature.u.turnOd.length = sample.feature.u.turnOd.profileZ[count - 1] - sample.feature.u.turnOd.profileZ[0];
-    } else {
-      sample.feature.u.turnOd.targetDiameter = std::stod(Require(kv, "feature.turnOd.targetDiameter"));
-      sample.feature.u.turnOd.length = std::stod(Require(kv, "feature.turnOd.length"));
+
+      double maxProfileRadius = 0.0;
+      for (int index = 0; index < count; ++index) {
+        maxProfileRadius = std::max(maxProfileRadius, profileRadius[index]);
+      }
+      double stockRadius = sample.stock.type == STOCK_CYLINDER ? sample.stock.p1 : maxProfileRadius;
+      if (stockRadius <= maxProfileRadius) {
+        stockRadius = maxProfileRadius + std::max(1.0, maxProfileRadius * 0.1);
+      }
+
+      if (!BuildTurnProfileFromLegacy(profileZ,
+                                      profileRadius,
+                                      count,
+                                      true,
+                                      stockRadius,
+                                      &sample.feature.u.turnOd.profile)) {
+        throw std::runtime_error("Failed to build TURN_OD PATH_2D profile");
+      }
     }
     ParseVector3(Require(kv, "feature.turnOd.axis.origin"), sample.feature.u.turnOd.axis.origin);
     ParseVector3(Require(kv, "feature.turnOd.axis.dir"), sample.feature.u.turnOd.axis.dir);
     ParseVector3(Require(kv, "feature.turnOd.axis.xdir"), sample.feature.u.turnOd.axis.xdir);
   } else if (featureType == "TURN_ID") {
     sample.feature.type = FEAT_TURN_ID;
-    sample.feature.u.turnId.profileCount = 0;
-    const std::string* profileCount = Find(kv, "feature.turnId.profile.count");
-    if (profileCount) {
+    if (!BuildTurnProfileFromSegments(kv, "feature.turnId", &sample.feature.u.turnId.profile)) {
+      const std::string* profileCount = Find(kv, "feature.turnId.profile.count");
+      if (!profileCount) {
+        throw std::runtime_error("feature.turnId.profile.segment.count or feature.turnId.profile.count is required");
+      }
       const int count = std::stoi(*profileCount);
-      if (count < 2 || count > L1_TURN_OD_PROFILE_MAX) {
+      if (count < 2 || count > L1_PATH2D_SEGMENT_MAX - 3) {
         throw std::runtime_error("feature.turnId.profile.count out of range");
       }
-      sample.feature.u.turnId.profileCount = count;
+      double profileZ[L1_PATH2D_SEGMENT_MAX]{};
+      double profileRadius[L1_PATH2D_SEGMENT_MAX]{};
       for (int index = 0; index < count; ++index) {
         const std::string zKey = "feature.turnId.profile." + std::to_string(index) + ".z";
         const std::string rKey = "feature.turnId.profile." + std::to_string(index) + ".radius";
-        sample.feature.u.turnId.profileZ[index] = std::stod(Require(kv, zKey));
-        sample.feature.u.turnId.profileRadius[index] = std::stod(Require(kv, rKey));
+        profileZ[index] = std::stod(Require(kv, zKey));
+        profileRadius[index] = std::stod(Require(kv, rKey));
       }
-      sample.feature.u.turnId.targetDiameter = sample.feature.u.turnId.profileRadius[0] * 2.0;
-      sample.feature.u.turnId.length = sample.feature.u.turnId.profileZ[count - 1] - sample.feature.u.turnId.profileZ[0];
-    } else {
-      sample.feature.u.turnId.targetDiameter = std::stod(Require(kv, "feature.turnId.targetDiameter"));
-      sample.feature.u.turnId.length = std::stod(Require(kv, "feature.turnId.length"));
+
+      if (!BuildTurnProfileFromLegacy(profileZ,
+                                      profileRadius,
+                                      count,
+                                      false,
+                                      0.0,
+                                      &sample.feature.u.turnId.profile)) {
+        throw std::runtime_error("Failed to build TURN_ID PATH_2D profile");
+      }
     }
     ParseVector3(Require(kv, "feature.turnId.axis.origin"), sample.feature.u.turnId.axis.origin);
     ParseVector3(Require(kv, "feature.turnId.axis.dir"), sample.feature.u.turnId.axis.dir);

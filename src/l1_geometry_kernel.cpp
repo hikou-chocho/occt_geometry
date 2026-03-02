@@ -1,19 +1,24 @@
 #include "l1_geometry_kernel.h"
 
 #include <algorithm>
+#include <cmath>
 #include <map>
 #include <memory>
 #include <stdexcept>
+#include <vector>
 
 #include <BRepAlgoAPI_Common.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
-#include <BRepAlgoAPI_Fuse.hxx>
-#include <BRepBndLib.hxx>
+#include <BRepBuilderAPI_MakeEdge.hxx>
+#include <BRepBuilderAPI_MakeFace.hxx>
+#include <BRepBuilderAPI_MakeWire.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
 #include <BRepPrimAPI_MakeCylinder.hxx>
-#include <Bnd_Box.hxx>
+#include <BRepPrimAPI_MakeRevol.hxx>
+#include <TopoDS_Face.hxx>
 #include <gp_Ax2.hxx>
+#include <gp_Ax1.hxx>
 #include <gp_Dir.hxx>
 #include <gp_Pnt.hxx>
 #include <gp_Vec.hxx>
@@ -68,6 +73,185 @@ class OcctKernelImpl {
 
 int MapExceptionToError() {
   return ERROR_OCCT_EXCEPTION;
+}
+
+constexpr double kGeomTol = 1.0e-7;
+constexpr double kPi = 3.14159265358979323846;
+constexpr double kTwoPi = 2.0 * kPi;
+
+struct UvPoint {
+  double u;
+  double v;
+};
+
+double Distance2D(const UvPoint& a, const UvPoint& b) {
+  const double du = a.u - b.u;
+  const double dv = a.v - b.v;
+  return std::sqrt(du * du + dv * dv);
+}
+
+bool NearlyEqual(const UvPoint& a, const UvPoint& b) {
+  return Distance2D(a, b) <= kGeomTol;
+}
+
+gp_Pnt To3DPoint(const UvPoint& uv, const AxisDto& axis) {
+  gp_Pnt origin(axis.origin[0], axis.origin[1], axis.origin[2]);
+  gp_Dir udir(axis.dir[0], axis.dir[1], axis.dir[2]);
+  gp_Dir vdir(axis.xdir[0], axis.xdir[1], axis.xdir[2]);
+  gp_Vec offset = gp_Vec(udir) * uv.u + gp_Vec(vdir) * uv.v;
+  return origin.Translated(offset);
+}
+
+bool AppendArcPolyline(const Path2DSegmentDto& segment,
+                       std::vector<UvPoint>* polyline,
+                       int* outErrorCode) {
+  const UvPoint from{segment.from.u, segment.from.v};
+  const UvPoint to{segment.to.u, segment.to.v};
+  const UvPoint center{segment.center.u, segment.center.v};
+
+  const double r0 = Distance2D(from, center);
+  const double r1 = Distance2D(to, center);
+  if (r0 <= kGeomTol || r1 <= kGeomTol) {
+    *outErrorCode = ERROR_INVALID_ARGUMENT;
+    return false;
+  }
+
+  const double radiusTolerance = std::max({kGeomTol, r0, r1}) * 1.0e-6;
+  if (std::fabs(r0 - r1) > radiusTolerance) {
+    *outErrorCode = ERROR_INVALID_ARGUMENT;
+    return false;
+  }
+
+  const double a0 = std::atan2(from.v - center.v, from.u - center.u);
+  double a1 = std::atan2(to.v - center.v, to.u - center.u);
+
+  double sweep = 0.0;
+  if (segment.arcDirection == ARC_DIR_CCW) {
+    while (a1 <= a0) {
+      a1 += kTwoPi;
+    }
+    sweep = a1 - a0;
+  } else if (segment.arcDirection == ARC_DIR_CW) {
+    while (a1 >= a0) {
+      a1 -= kTwoPi;
+    }
+    sweep = a1 - a0;
+  } else {
+    *outErrorCode = ERROR_INVALID_ARGUMENT;
+    return false;
+  }
+
+  if (std::fabs(sweep) <= 1.0e-9) {
+    *outErrorCode = ERROR_INVALID_ARGUMENT;
+    return false;
+  }
+
+  const int steps = std::max(4, static_cast<int>(std::ceil(std::fabs(sweep) / (kPi / 18.0))));
+  for (int index = 1; index <= steps; ++index) {
+    const double t = static_cast<double>(index) / static_cast<double>(steps);
+    const double angle = a0 + sweep * t;
+    polyline->push_back({center.u + r0 * std::cos(angle), center.v + r0 * std::sin(angle)});
+  }
+
+  *outErrorCode = ERROR_OK;
+  return true;
+}
+
+bool BuildTurnToolFromPath(const Path2DProfileDto& profile,
+                           const AxisDto& axis,
+                           TopoDS_Shape* outTool,
+                           int* outErrorCode) {
+  if (profile.type != PROFILE_PATH_2D || profile.plane != PROFILE_PLANE_UV) {
+    *outErrorCode = ERROR_INVALID_ARGUMENT;
+    return false;
+  }
+  if (!profile.closed || profile.segmentCount <= 0 || profile.segmentCount > L1_PATH2D_SEGMENT_MAX) {
+    *outErrorCode = ERROR_INVALID_ARGUMENT;
+    return false;
+  }
+
+  const UvPoint start{profile.start.u, profile.start.v};
+  UvPoint current = start;
+
+  std::vector<UvPoint> polyline;
+  polyline.reserve(static_cast<size_t>(profile.segmentCount) * 20U);
+  polyline.push_back(start);
+
+  for (int index = 0; index < profile.segmentCount; ++index) {
+    const Path2DSegmentDto& segment = profile.segments[index];
+    const UvPoint from{segment.from.u, segment.from.v};
+    const UvPoint to{segment.to.u, segment.to.v};
+
+    if (!NearlyEqual(from, current)) {
+      *outErrorCode = ERROR_INVALID_ARGUMENT;
+      return false;
+    }
+
+    if (segment.type == PATH_SEGMENT_LINE) {
+      if (NearlyEqual(from, to)) {
+        *outErrorCode = ERROR_INVALID_ARGUMENT;
+        return false;
+      }
+      polyline.push_back(to);
+    } else if (segment.type == PATH_SEGMENT_ARC) {
+      if (!AppendArcPolyline(segment, &polyline, outErrorCode)) {
+        return false;
+      }
+    } else {
+      *outErrorCode = ERROR_FEATURE_NOT_SUPPORTED;
+      return false;
+    }
+
+    current = to;
+  }
+
+  if (!NearlyEqual(current, start)) {
+    *outErrorCode = ERROR_INVALID_ARGUMENT;
+    return false;
+  }
+  if (!NearlyEqual(polyline.back(), start)) {
+    polyline.push_back(start);
+  }
+
+  BRepBuilderAPI_MakeWire wireBuilder;
+  for (size_t index = 1; index < polyline.size(); ++index) {
+    const gp_Pnt p0 = To3DPoint(polyline[index - 1], axis);
+    const gp_Pnt p1 = To3DPoint(polyline[index], axis);
+    if (p0.Distance(p1) <= kGeomTol) {
+      continue;
+    }
+
+    BRepBuilderAPI_MakeEdge edgeBuilder(p0, p1);
+    if (!edgeBuilder.IsDone()) {
+      *outErrorCode = ERROR_BOOLEAN_FAILED;
+      return false;
+    }
+    wireBuilder.Add(edgeBuilder.Edge());
+  }
+
+  if (!wireBuilder.IsDone()) {
+    *outErrorCode = ERROR_BOOLEAN_FAILED;
+    return false;
+  }
+
+  const TopoDS_Wire wire = wireBuilder.Wire();
+  BRepBuilderAPI_MakeFace faceBuilder(wire);
+  if (!faceBuilder.IsDone()) {
+    *outErrorCode = ERROR_BOOLEAN_FAILED;
+    return false;
+  }
+
+  gp_Pnt origin(axis.origin[0], axis.origin[1], axis.origin[2]);
+  gp_Dir dir(axis.dir[0], axis.dir[1], axis.dir[2]);
+  BRepPrimAPI_MakeRevol revol(faceBuilder.Face(), gp_Ax1(origin, dir), kTwoPi, true);
+  if (!revol.IsDone()) {
+    *outErrorCode = ERROR_BOOLEAN_FAILED;
+    return false;
+  }
+
+  *outTool = revol.Shape();
+  *outErrorCode = ERROR_OK;
+  return true;
 }
 }  // namespace
 
@@ -172,167 +356,20 @@ int L1_ApplyFeature(void* kernel,
       }
       case FEAT_TURN_OD: {
         const TurnOdFeatureDto& turn = feature->u.turnOd;
-        Bnd_Box stockBox;
-        BRepBndLib::Add(*stock, stockBox);
-        if (stockBox.IsVoid()) {
-          outResult->errorCode = ERROR_BOOLEAN_FAILED;
-          return ERROR_BOOLEAN_FAILED;
+        int buildError = ERROR_OK;
+        if (!BuildTurnToolFromPath(turn.profile, turn.axis, &tool, &buildError)) {
+          outResult->errorCode = buildError;
+          return buildError;
         }
-
-        Standard_Real xmin = 0.0;
-        Standard_Real ymin = 0.0;
-        Standard_Real zmin = 0.0;
-        Standard_Real xmax = 0.0;
-        Standard_Real ymax = 0.0;
-        Standard_Real zmax = 0.0;
-        stockBox.Get(xmin, ymin, zmin, xmax, ymax, zmax);
-        const double spanX = xmax - xmin;
-        const double spanY = ymax - ymin;
-        const double spanZ = zmax - zmin;
-        const double stockOuterRadius = std::max({spanX, spanY, spanZ}) * 2.0;
-
-		// TODO: create 2d profile and revolve instead of creating multiple annulus segments and fusing them together.
-        if (turn.profileCount > 1) {
-          gp_Pnt origin(turn.axis.origin[0], turn.axis.origin[1], turn.axis.origin[2]);
-          gp_Dir dir(turn.axis.dir[0], turn.axis.dir[1], turn.axis.dir[2]);
-
-          TopoDS_Shape removalTool;
-          bool hasTool = false;
-          for (int index = 0; index < turn.profileCount - 1; ++index) {
-            const double z0 = turn.profileZ[index];
-            const double z1 = turn.profileZ[index + 1];
-            const double targetRadius = turn.profileRadius[index];
-            if (targetRadius <= 0.0 || z1 < z0) {
-              outResult->errorCode = ERROR_INVALID_ARGUMENT;
-              return ERROR_INVALID_ARGUMENT;
-            }
-
-            const double segmentLength = z1 - z0;
-            if (segmentLength <= 1.0e-9) {
-              continue;
-            }
-
-            if (targetRadius >= stockOuterRadius - 1.0e-9) {
-              continue;
-            }
-
-            gp_Pnt segmentOrigin = origin.Translated(gp_Vec(dir) * z0);
-            gp_Ax2 segmentAxis(segmentOrigin, dir);
-            TopoDS_Shape outerCylinder =
-                BRepPrimAPI_MakeCylinder(segmentAxis, stockOuterRadius, segmentLength).Shape();
-            TopoDS_Shape innerCylinder =
-                BRepPrimAPI_MakeCylinder(segmentAxis, targetRadius, segmentLength).Shape();
-            BRepAlgoAPI_Cut annulus(outerCylinder, innerCylinder);
-            if (!annulus.IsDone()) {
-              outResult->errorCode = ERROR_BOOLEAN_FAILED;
-              return ERROR_BOOLEAN_FAILED;
-            }
-            TopoDS_Shape segmentTool = annulus.Shape();
-
-            if (!hasTool) {
-              removalTool = segmentTool;
-              hasTool = true;
-            } else {
-              BRepAlgoAPI_Fuse fuse(removalTool, segmentTool);
-              if (!fuse.IsDone()) {
-                outResult->errorCode = ERROR_BOOLEAN_FAILED;
-                return ERROR_BOOLEAN_FAILED;
-              }
-              removalTool = fuse.Shape();
-            }
-          }
-
-          if (!hasTool) {
-            outResult->errorCode = ERROR_INVALID_ARGUMENT;
-            return ERROR_INVALID_ARGUMENT;
-          }
-
-          tool = removalTool;
-          break;
-        }
-
-        if (turn.targetDiameter <= 0.0 || turn.length <= 0.0) {
-          outResult->errorCode = ERROR_INVALID_ARGUMENT;
-          return ERROR_INVALID_ARGUMENT;
-        }
-
-        const double targetRadius = turn.targetDiameter * 0.5;
-        gp_Pnt origin(turn.axis.origin[0], turn.axis.origin[1], turn.axis.origin[2]);
-        gp_Dir dir(turn.axis.dir[0], turn.axis.dir[1], turn.axis.dir[2]);
-        gp_Ax2 axis(origin, dir);
-
-        TopoDS_Shape outerCylinder = BRepPrimAPI_MakeCylinder(axis, stockOuterRadius, turn.length).Shape();
-        TopoDS_Shape innerCylinder = BRepPrimAPI_MakeCylinder(axis, targetRadius, turn.length).Shape();
-
-        BRepAlgoAPI_Cut annulusCut(outerCylinder, innerCylinder);
-        if (!annulusCut.IsDone()) {
-          outResult->errorCode = ERROR_BOOLEAN_FAILED;
-          return ERROR_BOOLEAN_FAILED;
-        }
-
-        tool = annulusCut.Shape();
         break;
       }
       case FEAT_TURN_ID: {
         const TurnIdFeatureDto& turn = feature->u.turnId;
-        if (turn.profileCount > 1) {
-          gp_Pnt origin(turn.axis.origin[0], turn.axis.origin[1], turn.axis.origin[2]);
-          gp_Dir dir(turn.axis.dir[0], turn.axis.dir[1], turn.axis.dir[2]);
-
-          TopoDS_Shape removalTool;
-          bool hasTool = false;
-          for (int index = 0; index < turn.profileCount - 1; ++index) {
-            const double z0 = turn.profileZ[index];
-            const double z1 = turn.profileZ[index + 1];
-            const double targetRadius = turn.profileRadius[index];
-            if (targetRadius <= 0.0 || z1 < z0) {
-              outResult->errorCode = ERROR_INVALID_ARGUMENT;
-              return ERROR_INVALID_ARGUMENT;
-            }
-
-            const double segmentLength = z1 - z0;
-            if (segmentLength <= 1.0e-9) {
-              continue;
-            }
-
-            gp_Pnt segmentOrigin = origin.Translated(gp_Vec(dir) * z0);
-            gp_Ax2 segmentAxis(segmentOrigin, dir);
-            TopoDS_Shape segmentTool =
-                BRepPrimAPI_MakeCylinder(segmentAxis, targetRadius, segmentLength).Shape();
-
-            if (!hasTool) {
-              removalTool = segmentTool;
-              hasTool = true;
-            } else {
-              BRepAlgoAPI_Fuse fuse(removalTool, segmentTool);
-              if (!fuse.IsDone()) {
-                outResult->errorCode = ERROR_BOOLEAN_FAILED;
-                return ERROR_BOOLEAN_FAILED;
-              }
-              removalTool = fuse.Shape();
-            }
-          }
-
-          if (!hasTool) {
-            outResult->errorCode = ERROR_INVALID_ARGUMENT;
-            return ERROR_INVALID_ARGUMENT;
-          }
-
-          tool = removalTool;
-          break;
+        int buildError = ERROR_OK;
+        if (!BuildTurnToolFromPath(turn.profile, turn.axis, &tool, &buildError)) {
+          outResult->errorCode = buildError;
+          return buildError;
         }
-
-        if (turn.targetDiameter <= 0.0 || turn.length <= 0.0) {
-          outResult->errorCode = ERROR_INVALID_ARGUMENT;
-          return ERROR_INVALID_ARGUMENT;
-        }
-
-        const double targetRadius = turn.targetDiameter * 0.5;
-        gp_Pnt origin(turn.axis.origin[0], turn.axis.origin[1], turn.axis.origin[2]);
-        gp_Dir dir(turn.axis.dir[0], turn.axis.dir[1], turn.axis.dir[2]);
-        gp_Ax2 axis(origin, dir);
-
-        tool = BRepPrimAPI_MakeCylinder(axis, targetRadius, turn.length).Shape();
         break;
       }
       default:
