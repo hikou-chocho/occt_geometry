@@ -142,7 +142,7 @@ internal static class JobApiExtensions
 		{
 			var job = request.Job;
 			job.Stock = request.Stock;
-			job.Stock.Type = (job.Stock.Type ?? string.Empty).ToUpperInvariant();
+			job.Stock.Type = (job.Stock.Type ?? string.Empty).Trim().ToUpperInvariant();
 
 			return Results.Ok(new JobApiResponse { Ok = true, Job = job });
 		});
@@ -151,44 +151,15 @@ internal static class JobApiExtensions
 		{
 			var job = request.Job;
 			var feature = request.Feature;
-			feature.Type = (feature.Type ?? string.Empty).ToUpperInvariant();
-
-			var validTypes = new HashSet<string> { "MILL_HOLE", "POCKET_RECT", "TURN_OD", "TURN_ID" };
-			if (!validTypes.Contains(feature.Type))
-			{
-				return Results.Ok(new JobApiResponse
-				{
-					Ok = false,
-					Job = job,
-					Errors = new List<ValidationError>
-					{
-						new() { Code = "INVALID_FEATURE_TYPE", Path = "feature.type", Message = $"Unsupported feature.type: {request.Feature.Type}" }
-					}
-				});
-			}
+			feature.Type = (feature.Type ?? string.Empty).Trim().ToUpperInvariant();
 
 			var features = new List<FeatureJsonModel>(job.Features);
 
-			if (request.Index is null || request.Index.Value >= features.Count)
-			{
+			// [D3] index < 0 or null or >= count → append
+			if (request.Index is null || request.Index.Value < 0 || request.Index.Value >= features.Count)
 				features.Add(feature);
-			}
-			else if (request.Index.Value < 0)
-			{
-				return Results.Ok(new JobApiResponse
-				{
-					Ok = false,
-					Job = job,
-					Errors = new List<ValidationError>
-					{
-						new() { Code = "INVALID_INDEX", Path = "index", Message = "index must be >= 0." }
-					}
-				});
-			}
 			else
-			{
 				features.Insert(request.Index.Value, feature);
-			}
 
 			job.Features = features;
 			return Results.Ok(new JobApiResponse { Ok = true, Job = job });

@@ -1,19 +1,6 @@
-using System.Text.Json.Serialization;
-using L1GeometryAdapter;
+namespace L1GeometryAdapter;
 
-internal sealed class ValidationError
-{
-	[JsonPropertyName("code")]
-	public string Code { get; init; } = string.Empty;
-
-	[JsonPropertyName("path")]
-	public string Path { get; init; } = string.Empty;
-
-	[JsonPropertyName("message")]
-	public string Message { get; init; } = string.Empty;
-}
-
-internal static class JobValidator
+public static class JobValidator
 {
 	private const int TurnProfileMax = 64;
 
@@ -94,7 +81,11 @@ internal static class JobValidator
 		if (string.IsNullOrWhiteSpace(job.Output.DeltaStlFile))
 			errors.Add(Error("EMPTY_OUTPUT_FILE", "output.deltaStlFile", "output.deltaStlFile must not be empty."));
 
-		return errors;
+		// [D7] Deterministic order: path asc → code asc
+		return errors
+			.OrderBy(e => e.Path)
+			.ThenBy(e => e.Code)
+			.ToList();
 	}
 
 	private static void ValidateAxis(AxisJsonModel? axis, string path, List<ValidationError> errors)
