@@ -21,6 +21,8 @@
 #include <BRepPrimAPI_MakeCylinder.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
 #include <BRepPrimAPI_MakeRevol.hxx>
+#include <GC_MakeArcOfCircle.hxx>
+#include <TopoDS_Edge.hxx>
 #include <TopoDS_Face.hxx>
 #include <gp_Ax2.hxx>
 #include <gp_Ax1.hxx>
@@ -101,7 +103,7 @@ const char* PathFrameModeName(PathFrameMode mode) {
   return mode == PathFrameMode::kTurnUv ? "turn_uv" : "planar_uv";
 }
 
-void DumpPath2dPolylineForDebug(const std::vector<UvPoint>& polyline, PathFrameMode mode) {
+void DumpPath2dSegmentsForDebug(const Path2DProfileDto& profile, PathFrameMode mode) {
   const char* rawDir = std::getenv(kDebugPath2dDirEnv);
   if (!rawDir || *rawDir == '\0') {
     return;
@@ -121,9 +123,14 @@ void DumpPath2dPolylineForDebug(const std::vector<UvPoint>& polyline, PathFrameM
       return;
     }
 
-    ofs << "index,u,v\n";
-    for (size_t index = 0; index < polyline.size(); ++index) {
-      ofs << index << "," << polyline[index].u << "," << polyline[index].v << "\n";
+    ofs << "index,type,from_u,from_v,to_u,to_v,center_u,center_v,arc_dir\n";
+    for (int index = 0; index < profile.segmentCount; ++index) {
+      const Path2DSegmentDto& segment = profile.segments[index];
+      ofs << index << "," << segment.type << ","
+          << segment.from.u << "," << segment.from.v << ","
+          << segment.to.u << "," << segment.to.v << ","
+          << segment.center.u << "," << segment.center.v << ","
+          << segment.arcDirection << "\n";
     }
   } catch (...) {
   }
@@ -155,12 +162,32 @@ gp_Pnt To3DPoint(const UvPoint& uv, const AxisDto& axis, PathFrameMode mode) {
   return origin.Translated(offset);
 }
 
-bool AppendArcPolyline(const Path2DSegmentDto& segment,
-                       std::vector<UvPoint>* polyline,
-                       int* outErrorCode) {
+void GetFrameDirections(const AxisDto& axis, PathFrameMode mode, gp_Dir* outU, gp_Dir* outV) {
+  if (mode == PathFrameMode::kTurnUv) {
+    *outU = gp_Dir(axis.dir[0], axis.dir[1], axis.dir[2]);
+    *outV = gp_Dir(axis.xdir[0], axis.xdir[1], axis.xdir[2]);
+    return;
+  }
+
+  const gp_Dir dir(axis.dir[0], axis.dir[1], axis.dir[2]);
+  const gp_Dir xdir(axis.xdir[0], axis.xdir[1], axis.xdir[2]);
+  *outU = xdir;
+  *outV = dir.Crossed(xdir);
+}
+
+bool ComputeArcGeometry(const Path2DSegmentDto& segment,
+                        double* outRadius,
+                        double* outStartAngle,
+                        double* outEndAngle,
+                        int* outErrorCode) {
   const UvPoint from{segment.from.u, segment.from.v};
   const UvPoint to{segment.to.u, segment.to.v};
   const UvPoint center{segment.center.u, segment.center.v};
+
+  if (NearlyEqual(from, to)) {
+    *outErrorCode = ERROR_INVALID_ARGUMENT;
+    return false;
+  }
 
   const double r0 = Distance2D(from, center);
   const double r1 = Distance2D(to, center);
@@ -199,20 +226,56 @@ bool AppendArcPolyline(const Path2DSegmentDto& segment,
     return false;
   }
 
-  const int steps = std::max(4, static_cast<int>(std::ceil(std::fabs(sweep) / (kPi / 18.0))));
-  for (int index = 1; index <= steps; ++index) {
-    const double t = static_cast<double>(index) / static_cast<double>(steps);
-    const double angle = a0 + sweep * t;
-    polyline->push_back({center.u + r0 * std::cos(angle), center.v + r0 * std::sin(angle)});
-  }
+  *outRadius = r0;
+  *outStartAngle = a0;
+  *outEndAngle = a0 + sweep;
 
   *outErrorCode = ERROR_OK;
   return true;
 }
 
-bool BuildClosedPathPolyline(const Path2DProfileDto& profile,
-                             std::vector<UvPoint>* outPolyline,
-                             int* outErrorCode) {
+bool BuildArcEdge(const Path2DSegmentDto& segment,
+                  const AxisDto& axis,
+                  PathFrameMode mode,
+                  TopoDS_Edge* outEdge,
+                  int* outErrorCode) {
+  double radius = 0.0;
+  double startAngle = 0.0;
+  double endAngle = 0.0;
+  if (!ComputeArcGeometry(segment, &radius, &startAngle, &endAngle, outErrorCode)) {
+    return false;
+  }
+
+  const UvPoint from{segment.from.u, segment.from.v};
+  const UvPoint to{segment.to.u, segment.to.v};
+  const UvPoint center{segment.center.u, segment.center.v};
+  const double sweep = endAngle - startAngle;
+  const double midAngle = startAngle + 0.5 * sweep;
+  const UvPoint mid{center.u + radius * std::cos(midAngle), center.v + radius * std::sin(midAngle)};
+
+  const gp_Pnt p0 = To3DPoint(from, axis, mode);
+  const gp_Pnt p1 = To3DPoint(mid, axis, mode);
+  const gp_Pnt p2 = To3DPoint(to, axis, mode);
+
+  GC_MakeArcOfCircle arcBuilder(p0, p1, p2);
+  if (!arcBuilder.IsDone()) {
+    *outErrorCode = ERROR_BOOLEAN_FAILED;
+    return false;
+  }
+
+  BRepBuilderAPI_MakeEdge edgeBuilder(arcBuilder.Value());
+  if (!edgeBuilder.IsDone()) {
+    *outErrorCode = ERROR_BOOLEAN_FAILED;
+    return false;
+  }
+
+  *outEdge = edgeBuilder.Edge();
+  *outErrorCode = ERROR_OK;
+  return true;
+}
+
+bool ValidateClosedPathProfile(const Path2DProfileDto& profile,
+                               int* outErrorCode) {
   if (profile.type != PROFILE_PATH_2D || profile.plane != PROFILE_PLANE_UV) {
     *outErrorCode = ERROR_INVALID_ARGUMENT;
     return false;
@@ -224,10 +287,6 @@ bool BuildClosedPathPolyline(const Path2DProfileDto& profile,
 
   const UvPoint start{profile.start.u, profile.start.v};
   UvPoint current = start;
-
-  outPolyline->clear();
-  outPolyline->reserve(static_cast<size_t>(profile.segmentCount) * 20U);
-  outPolyline->push_back(start);
 
   for (int index = 0; index < profile.segmentCount; ++index) {
     const Path2DSegmentDto& segment = profile.segments[index];
@@ -244,9 +303,11 @@ bool BuildClosedPathPolyline(const Path2DProfileDto& profile,
         *outErrorCode = ERROR_INVALID_ARGUMENT;
         return false;
       }
-      outPolyline->push_back(to);
     } else if (segment.type == PATH_SEGMENT_ARC) {
-      if (!AppendArcPolyline(segment, outPolyline, outErrorCode)) {
+      double radius = 0.0;
+      double startAngle = 0.0;
+      double endAngle = 0.0;
+      if (!ComputeArcGeometry(segment, &radius, &startAngle, &endAngle, outErrorCode)) {
         return false;
       }
     } else {
@@ -261,9 +322,6 @@ bool BuildClosedPathPolyline(const Path2DProfileDto& profile,
     *outErrorCode = ERROR_INVALID_ARGUMENT;
     return false;
   }
-  if (!NearlyEqual(outPolyline->back(), start)) {
-    outPolyline->push_back(start);
-  }
 
   *outErrorCode = ERROR_OK;
   return true;
@@ -274,26 +332,51 @@ bool BuildFaceFromPath(const Path2DProfileDto& profile,
                        PathFrameMode mode,
                        TopoDS_Face* outFace,
                        int* outErrorCode) {
-  std::vector<UvPoint> polyline;
-  if (!BuildClosedPathPolyline(profile, &polyline, outErrorCode)) {
+  if (!ValidateClosedPathProfile(profile, outErrorCode)) {
     return false;
   }
-  DumpPath2dPolylineForDebug(polyline, mode);
+  DumpPath2dSegmentsForDebug(profile, mode);
+
+  const UvPoint start{profile.start.u, profile.start.v};
+  UvPoint current = start;
 
   BRepBuilderAPI_MakeWire wireBuilder;
-  for (size_t index = 1; index < polyline.size(); ++index) {
-    const gp_Pnt p0 = To3DPoint(polyline[index - 1], axis, mode);
-    const gp_Pnt p1 = To3DPoint(polyline[index], axis, mode);
-    if (p0.Distance(p1) <= kGeomTol) {
-      continue;
-    }
+  for (int index = 0; index < profile.segmentCount; ++index) {
+    const Path2DSegmentDto& segment = profile.segments[index];
+    const UvPoint from{segment.from.u, segment.from.v};
+    const UvPoint to{segment.to.u, segment.to.v};
 
-    BRepBuilderAPI_MakeEdge edgeBuilder(p0, p1);
-    if (!edgeBuilder.IsDone()) {
-      *outErrorCode = ERROR_BOOLEAN_FAILED;
+    if (!NearlyEqual(from, current)) {
+      *outErrorCode = ERROR_INVALID_ARGUMENT;
       return false;
     }
-    wireBuilder.Add(edgeBuilder.Edge());
+
+    TopoDS_Edge edge;
+    if (segment.type == PATH_SEGMENT_LINE) {
+      const gp_Pnt p0 = To3DPoint(from, axis, mode);
+      const gp_Pnt p1 = To3DPoint(to, axis, mode);
+      BRepBuilderAPI_MakeEdge edgeBuilder(p0, p1);
+      if (!edgeBuilder.IsDone()) {
+        *outErrorCode = ERROR_BOOLEAN_FAILED;
+        return false;
+      }
+      edge = edgeBuilder.Edge();
+    } else if (segment.type == PATH_SEGMENT_ARC) {
+      if (!BuildArcEdge(segment, axis, mode, &edge, outErrorCode)) {
+        return false;
+      }
+    } else {
+      *outErrorCode = ERROR_FEATURE_NOT_SUPPORTED;
+      return false;
+    }
+
+    wireBuilder.Add(edge);
+    current = to;
+  }
+
+  if (!NearlyEqual(current, start)) {
+    *outErrorCode = ERROR_INVALID_ARGUMENT;
+    return false;
   }
 
   if (!wireBuilder.IsDone()) {
