@@ -390,14 +390,18 @@ int L1_CreateStock(void* kernel, const StockDto* dto, int* outStockId) {
   }
   try {
     auto* impl = static_cast<OcctKernelImpl*>(kernel);
+    gp_Pnt origin(dto->axis.origin[0], dto->axis.origin[1], dto->axis.origin[2]);
+    gp_Dir dir(dto->axis.dir[0], dto->axis.dir[1], dto->axis.dir[2]);
+    gp_Dir xdir(dto->axis.xdir[0], dto->axis.xdir[1], dto->axis.xdir[2]);
+    gp_Ax2 axis(origin, dir, xdir);
 
     TopoDS_Shape shape;
     switch (dto->type) {
       case STOCK_BOX:
-        shape = BRepPrimAPI_MakeBox(dto->p1, dto->p2, dto->p3).Shape();
+        shape = BRepPrimAPI_MakeBox(axis, dto->p1, dto->p2, dto->p3).Shape();
         break;
       case STOCK_CYLINDER:
-        shape = BRepPrimAPI_MakeCylinder(dto->p1, dto->p2).Shape();
+        shape = BRepPrimAPI_MakeCylinder(axis, dto->p1, dto->p2).Shape();
         break;
       default:
         return ERROR_INVALID_ARGUMENT;
