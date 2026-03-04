@@ -21,7 +21,7 @@ typedef struct AxisDto {
 } AxisDto;
 
 typedef enum StockType {
-  STOCK_BOX = 1,
+  STOCK_BOX      = 1,
   STOCK_CYLINDER = 2
 } StockType;
 
@@ -32,14 +32,6 @@ typedef struct StockDto {
   double p3;
   AxisDto axis;
 } StockDto;
-
-typedef enum FeatureType {
-  FEAT_MILL_HOLE = 1,
-  FEAT_POCKET_RECT = 2,
-  FEAT_TURN_OD = 3,
-  FEAT_TURN_ID = 4,
-  FEAT_MILL_CONTOUR = 5
-} FeatureType;
 
 typedef struct MillHoleFeatureDto {
   double radius;
@@ -54,75 +46,30 @@ typedef struct PocketRectFeatureDto {
   AxisDto axis;
 } PocketRectFeatureDto;
 
-#define L1_PATH2D_SEGMENT_MAX 128
-
-typedef enum ProfileType {
-  PROFILE_PATH_2D = 1
-} ProfileType;
-
-typedef enum ProfilePlane {
-  PROFILE_PLANE_UV = 1
-} ProfilePlane;
-
 typedef struct Path2DPointDto {
   double u;
   double v;
 } Path2DPointDto;
 
 typedef enum Path2DSegmentType {
-  PATH_SEGMENT_LINE = 1,
-  PATH_SEGMENT_ARC = 2,
+  PATH_SEGMENT_LINE   = 1,
+  PATH_SEGMENT_ARC    = 2,
   PATH_SEGMENT_SPLINE = 3
 } Path2DSegmentType;
 
 typedef enum ArcDirection {
-  ARC_DIR_CW = 1,
+  ARC_DIR_CW  = 1,
   ARC_DIR_CCW = 2
 } ArcDirection;
 
+/* doubles を先頭に並べてパディングなし: 56 bytes */
 typedef struct Path2DSegmentDto {
-  Path2DSegmentType type;
-  Path2DPointDto from;
-  Path2DPointDto to;
-  Path2DPointDto center;
-  ArcDirection arcDirection;
-} Path2DSegmentDto;
-
-typedef struct Path2DProfileDto {
-  ProfileType type;
-  ProfilePlane plane;
-  Path2DPointDto start;
-  int segmentCount;
-  Path2DSegmentDto segments[L1_PATH2D_SEGMENT_MAX];
-  int closed;
-} Path2DProfileDto;
-
-typedef struct TurnOdFeatureDto {
-  Path2DProfileDto profile;
-  AxisDto axis;
-} TurnOdFeatureDto;
-
-typedef struct TurnIdFeatureDto {
-  Path2DProfileDto profile;
-  AxisDto axis;
-} TurnIdFeatureDto;
-
-typedef struct MillContourFeatureDto {
-  Path2DProfileDto profile;
-  double depth;
-  AxisDto axis;
-} MillContourFeatureDto;
-
-typedef struct FeatureDto {
-  FeatureType type;
-  union {
-    MillHoleFeatureDto millHole;
-    PocketRectFeatureDto pocketRect;
-    TurnOdFeatureDto turnOd;
-    TurnIdFeatureDto turnId;
-    MillContourFeatureDto millContour;
-  } u;
-} FeatureDto;
+  Path2DPointDto    from;         /* offset  0, 16 bytes */
+  Path2DPointDto    to;           /* offset 16, 16 bytes */
+  Path2DPointDto    center;       /* offset 32, 16 bytes */
+  Path2DSegmentType type;         /* offset 48,  4 bytes */
+  ArcDirection      arcDirection; /* offset 52,  4 bytes */
+} Path2DSegmentDto;               /* total: 56 bytes     */
 
 typedef struct OperationResult {
   int resultShapeId;
@@ -132,7 +79,7 @@ typedef struct OperationResult {
 
 typedef enum OutputFormat {
   OUT_STEP = 1,
-  OUT_STL = 2
+  OUT_STL  = 2
 } OutputFormat;
 
 typedef struct OutputOptions {
@@ -147,10 +94,29 @@ L1_API int   L1_DestroyKernel(void* kernel);
 
 L1_API int   L1_CreateStock(void* kernel, const StockDto* dto, int* outStockId);
 
-L1_API int   L1_ApplyFeature(void* kernel,
-                            int stockId,
-                            const FeatureDto* feature,
+L1_API int   L1_ApplyMillHole(void* kernel, int stockId,
+                              const MillHoleFeatureDto* dto,
+                              OperationResult* outResult);
+
+L1_API int   L1_ApplyPocketRect(void* kernel, int stockId,
+                                const PocketRectFeatureDto* dto,
+                                OperationResult* outResult);
+
+L1_API int   L1_ApplyTurnOd(void* kernel, int stockId,
+                            const AxisDto* axis,
+                            const Path2DSegmentDto* segments, int segmentCount, int closed,
                             OperationResult* outResult);
+
+L1_API int   L1_ApplyTurnId(void* kernel, int stockId,
+                            const AxisDto* axis,
+                            const Path2DSegmentDto* segments, int segmentCount, int closed,
+                            OperationResult* outResult);
+
+L1_API int   L1_ApplyMillContour(void* kernel, int stockId,
+                                 const AxisDto* axis,
+                                 const Path2DSegmentDto* segments, int segmentCount, int closed,
+                                 double depth,
+                                 OperationResult* outResult);
 
 L1_API int   L1_DeleteShape(void* kernel, int shapeId);
 

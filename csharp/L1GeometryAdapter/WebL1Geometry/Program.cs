@@ -67,8 +67,14 @@ app.MapPost("/pipeline/run", (JobJsonModel request) =>
 
 		var stock = job.Stock;
 		var stockId = kernel.CreateStock(ref stock);
-		var results = kernel.ApplyFeatures(stockId, job.Features);
-		var finalResult = results[^1];
+
+		int currentId = stockId;
+		OperationResult finalResult = default;
+		foreach (var feature in job.Features)
+		{
+			finalResult = ApplyFeature(kernel, currentId, feature);
+			currentId = finalResult.ResultShapeId;
+		}
 
 		var stepOpt = job.OutputOptions;
 		stepOpt.Format = OutputFormat.Step;
@@ -113,6 +119,38 @@ static string SanitizeFileName(string? value, string fallback)
 		nameOnly = nameOnly.Replace(invalid, '_');
 
 	return nameOnly;
+}
+
+static OperationResult ApplyFeature(L1Kernel kernel, int stockId, FeatureJsonModel feature)
+{
+	var type = (feature.Type ?? string.Empty).ToUpperInvariant();
+	return type switch
+	{
+		"MILL_HOLE"    => kernel.ApplyMillHole(stockId, feature.MillHole!.ToKernel()),
+		"POCKET_RECT"  => kernel.ApplyPocketRect(stockId, feature.PocketRect!.ToKernel()),
+		"TURN_OD"      => ApplyTurn(kernel, stockId, feature.TurnOd!,
+		                            (id, ax, segs, c) => kernel.ApplyTurnOd(id, ax, segs, c)),
+		"TURN_ID"      => ApplyTurn(kernel, stockId, feature.TurnId!,
+		                            (id, ax, segs, c) => kernel.ApplyTurnId(id, ax, segs, c)),
+		"MILL_CONTOUR" => ApplyMillContour(kernel, stockId, feature.MillContour!),
+		_ => throw new InvalidOperationException($"Unsupported feature.type: {feature.Type}"),
+	};
+}
+
+static OperationResult ApplyTurn(L1Kernel kernel, int stockId, TurnJsonModel turn,
+	Func<int, AxisDto, Path2DSegmentDto[], bool, OperationResult> applyFn)
+{
+	if (turn.Profile is null)
+		throw new InvalidOperationException("turn profile is required.");
+	return applyFn(stockId, turn.Axis.ToKernel(), turn.Profile.ToKernelSegments(), turn.Profile.Closed);
+}
+
+static OperationResult ApplyMillContour(L1Kernel kernel, int stockId, MillContourJsonModel mc)
+{
+	if (mc.Profile is null)
+		throw new InvalidOperationException("millContour profile is required.");
+	return kernel.ApplyMillContour(stockId, mc.Axis.ToKernel(),
+	                               mc.Profile.ToKernelSegments(), mc.Profile.Closed, mc.Depth);
 }
 
 static void TryDeleteDirectory(string path)

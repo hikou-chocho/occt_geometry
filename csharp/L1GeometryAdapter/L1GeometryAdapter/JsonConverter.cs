@@ -19,20 +19,16 @@ public sealed class JobJsonModel
 		if (Features.Count == 0)
 			throw new InvalidOperationException("features must contain at least one item.");
 
-		var kernelFeatures = new List<FeatureDto>(Features.Count);
-		foreach (var feature in Features)
-			kernelFeatures.Add(feature.ToKernel());
-
 		return new KernelJobModel
 		{
-			Stock = Stock.ToKernel(),
-			Features = kernelFeatures,
+			Stock         = Stock.ToKernel(),
+			Features      = Features,
 			OutputOptions = Output.ToKernelOptions(),
-			OutputDir = Output.Dir,
-			StepFile = Output.StepFile,
-			StlFile = Output.StlFile,
+			OutputDir     = Output.Dir,
+			StepFile      = Output.StepFile,
+			StlFile       = Output.StlFile,
 			DeltaStepFile = Output.DeltaStepFile,
-			DeltaStlFile = Output.DeltaStlFile,
+			DeltaStlFile  = Output.DeltaStlFile,
 		};
 	}
 }
@@ -58,7 +54,7 @@ public sealed class StockJsonModel
 	{
 		var stockType = Type.ToUpperInvariant() switch
 		{
-			"BOX" => StockType.Box,
+			"BOX"      => StockType.Box,
 			"CYLINDER" => StockType.Cylinder,
 			_ => throw new InvalidOperationException($"Unsupported stock.type: {Type}"),
 		};
@@ -66,9 +62,9 @@ public sealed class StockJsonModel
 		return new StockDto
 		{
 			Type = stockType,
-			P1 = P1,
-			P2 = P2,
-			P3 = P3,
+			P1   = P1,
+			P2   = P2,
+			P3   = P3,
 			Axis = Axis.ToKernel(),
 		};
 	}
@@ -91,74 +87,8 @@ public sealed class FeatureJsonModel
 	[JsonPropertyAttribute("turnId")]
 	public TurnJsonModel? TurnId { get; set; }
 
-	public FeatureDto ToKernel()
-	{
-		var type = Type.ToUpperInvariant();
-		return type switch
-		{
-			"MILL_HOLE" => BuildMillHole(),
-			"POCKET_RECT" => BuildPocketRect(),
-			"TURN_OD" => BuildTurnOd(),
-			"TURN_ID" => BuildTurnId(),
-			_ => throw new InvalidOperationException($"Unsupported feature.type: {Type}"),
-		};
-	}
-
-	private FeatureDto BuildMillHole()
-	{
-		if (MillHole is null)
-			throw new InvalidOperationException("feature.millHole is required for type MILL_HOLE.");
-
-		return new FeatureDto
-		{
-			Type = FeatureType.MillHole,
-			MillHole = MillHole.ToKernel(),
-		};
-	}
-
-	private FeatureDto BuildPocketRect()
-	{
-		if (PocketRect is null)
-			throw new InvalidOperationException("feature.pocketRect is required for type POCKET_RECT.");
-
-		return new FeatureDto
-		{
-			Type = FeatureType.PocketRect,
-			PocketRect = PocketRect.ToKernel(),
-		};
-	}
-
-	private FeatureDto BuildTurnOd()
-	{
-		if (TurnOd is null)
-			throw new InvalidOperationException("feature.turnOd is required for type TURN_OD.");
-
-		unsafe
-		{
-			var turn = TurnOd.ToKernelOd();
-			return new FeatureDto
-			{
-				Type = FeatureType.TurnOd,
-				TurnOd = turn,
-			};
-		}
-	}
-
-	private FeatureDto BuildTurnId()
-	{
-		if (TurnId is null)
-			throw new InvalidOperationException("feature.turnId is required for type TURN_ID.");
-
-		unsafe
-		{
-			var turn = TurnId.ToKernelId();
-			return new FeatureDto
-			{
-				Type = FeatureType.TurnId,
-				TurnId = turn,
-			};
-		}
-	}
+	[JsonPropertyAttribute("millContour")]
+	public MillContourJsonModel? MillContour { get; set; }
 }
 
 public sealed class MillHoleJsonModel
@@ -172,15 +102,12 @@ public sealed class MillHoleJsonModel
 	[JsonPropertyAttribute("axis")]
 	public AxisJsonModel Axis { get; set; } = new();
 
-	public MillHoleFeatureDto ToKernel()
+	public MillHoleFeatureDto ToKernel() => new()
 	{
-		return new MillHoleFeatureDto
-		{
-			Radius = Radius,
-			Depth = Depth,
-			Axis = Axis.ToKernel(),
-		};
-	}
+		Radius = Radius,
+		Depth  = Depth,
+		Axis   = Axis.ToKernel(),
+	};
 }
 
 public sealed class PocketRectJsonModel
@@ -197,86 +124,123 @@ public sealed class PocketRectJsonModel
 	[JsonPropertyAttribute("axis")]
 	public AxisJsonModel Axis { get; set; } = new();
 
-	public PocketRectFeatureDto ToKernel()
+	public PocketRectFeatureDto ToKernel() => new()
 	{
-		return new PocketRectFeatureDto
+		Width  = Width,
+		Height = Height,
+		Depth  = Depth,
+		Axis   = Axis.ToKernel(),
+	};
+}
+
+// ---------------------------------------------------------------------------
+// Path2D JSON モデル
+// ---------------------------------------------------------------------------
+
+public sealed class Path2DPointJsonModel
+{
+	[JsonPropertyAttribute("u")]
+	public double U { get; set; }
+
+	[JsonPropertyAttribute("v")]
+	public double V { get; set; }
+
+	public Path2DPointDto ToKernel() => new() { U = U, V = V };
+}
+
+public sealed class Path2DSegmentJsonModel
+{
+	[JsonPropertyAttribute("type")]
+	public string? Type { get; set; }
+
+	[JsonPropertyAttribute("from")]
+	public Path2DPointJsonModel? From { get; set; }
+
+	[JsonPropertyAttribute("to")]
+	public Path2DPointJsonModel? To { get; set; }
+
+	[JsonPropertyAttribute("center")]
+	public Path2DPointJsonModel? Center { get; set; }
+
+	[JsonPropertyAttribute("arcDirection")]
+	public string? ArcDirection { get; set; }
+
+	public Path2DSegmentDto ToKernel()
+	{
+		var segType = (Type ?? string.Empty).Trim().ToUpperInvariant() switch
 		{
-			Width = Width,
-			Height = Height,
-			Depth = Depth,
-			Axis = Axis.ToKernel(),
+			"LINE" => Path2DSegmentType.Line,
+			"ARC"  => Path2DSegmentType.Arc,
+			_ => throw new InvalidOperationException($"Unsupported segment type: {Type}"),
+		};
+
+		var arcDir = (ArcDirection ?? string.Empty).Trim().ToUpperInvariant() switch
+		{
+			"CW"  => L1GeometryAdapter.ArcDirection.CW,
+			"CCW" => L1GeometryAdapter.ArcDirection.CCW,
+			""    => L1GeometryAdapter.ArcDirection.CW,  // LINE セグメントでは無視される
+			_ => throw new InvalidOperationException($"Unsupported arcDirection: {ArcDirection}"),
+		};
+
+		return new Path2DSegmentDto
+		{
+			From         = From?.ToKernel()   ?? default,
+			To           = To?.ToKernel()     ?? default,
+			Center       = Center?.ToKernel() ?? default,
+			Type         = segType,
+			ArcDirection = arcDir,
 		};
 	}
 }
+
+public sealed class Path2DProfileJsonModel
+{
+	[JsonPropertyAttribute("start")]
+	public Path2DPointJsonModel? Start { get; set; }
+
+	[JsonPropertyAttribute("segments")]
+	public List<Path2DSegmentJsonModel> Segments { get; set; } = new();
+
+	[JsonPropertyAttribute("closed")]
+	public bool Closed { get; set; }
+
+	public Path2DSegmentDto[] ToKernelSegments()
+	{
+		var result = new Path2DSegmentDto[Segments.Count];
+		for (int i = 0; i < Segments.Count; i++)
+			result[i] = Segments[i].ToKernel();
+		return result;
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Turn / MillContour JSON モデル
+// ---------------------------------------------------------------------------
 
 public sealed class TurnJsonModel
 {
 	[JsonPropertyAttribute("profile")]
-	public List<TurnProfilePointJsonModel> Profile { get; set; } = new();
+	public Path2DProfileJsonModel? Profile { get; set; }
 
 	[JsonPropertyAttribute("axis")]
 	public AxisJsonModel Axis { get; set; } = new();
-
-	public unsafe TurnOdFeatureDto ToKernelOd()
-	{
-		ValidateProfile();
-
-		var dto = new TurnOdFeatureDto
-		{
-			ProfileCount = Profile.Count,
-			Axis = Axis.ToKernel(),
-			TargetDiameter = Profile[0].Radius * 2.0,
-			Length = Profile[^1].Z - Profile[0].Z,
-		};
-
-		for (int i = 0; i < Profile.Count; i++)
-		{
-			dto.ProfileZ[i] = Profile[i].Z;
-			dto.ProfileRadius[i] = Profile[i].Radius;
-		}
-
-		return dto;
-	}
-
-	public unsafe TurnIdFeatureDto ToKernelId()
-	{
-		ValidateProfile();
-
-		var dto = new TurnIdFeatureDto
-		{
-			ProfileCount = Profile.Count,
-			Axis = Axis.ToKernel(),
-			TargetDiameter = Profile[0].Radius * 2.0,
-			Length = Profile[^1].Z - Profile[0].Z,
-		};
-
-		for (int i = 0; i < Profile.Count; i++)
-		{
-			dto.ProfileZ[i] = Profile[i].Z;
-			dto.ProfileRadius[i] = Profile[i].Radius;
-		}
-
-		return dto;
-	}
-
-	private void ValidateProfile()
-	{
-		if (Profile.Count < 2)
-			throw new InvalidOperationException("turn profile requires at least 2 points.");
-
-		if (Profile.Count > L1GeometryKernelNative.TurnOdProfileMax)
-			throw new InvalidOperationException($"turn profile supports at most {L1GeometryKernelNative.TurnOdProfileMax} points.");
-	}
 }
 
-public sealed class TurnProfilePointJsonModel
+public sealed class MillContourJsonModel
 {
-	[JsonPropertyAttribute("z")]
-	public double Z { get; set; }
+	[JsonPropertyAttribute("profile")]
+	public Path2DProfileJsonModel? Profile { get; set; }
 
-	[JsonPropertyAttribute("radius")]
-	public double Radius { get; set; }
+	[JsonPropertyAttribute("depth")]
+	public double Depth { get; set; }
+
+	[JsonPropertyAttribute("axis")]
+	public AxisJsonModel Axis { get; set; } = new();
 }
+
+// ---------------------------------------------------------------------------
+// Axis JSON モデル
+// ---------------------------------------------------------------------------
 
 public sealed class AxisJsonModel
 {
@@ -289,21 +253,18 @@ public sealed class AxisJsonModel
 	[JsonPropertyAttribute("xdir")]
 	public double[] Xdir { get; set; } = Array.Empty<double>();
 
-	public unsafe AxisDto ToKernel()
+	public AxisDto ToKernel()
 	{
 		ValidateLength(Origin, "origin");
-		ValidateLength(Dir, "dir");
-		ValidateLength(Xdir, "xdir");
+		ValidateLength(Dir,    "dir");
+		ValidateLength(Xdir,   "xdir");
 
-		var axis = new AxisDto();
-		for (int i = 0; i < 3; i++)
+		return new AxisDto
 		{
-			axis.Origin[i] = Origin[i];
-			axis.Dir[i] = Dir[i];
-			axis.Xdir[i] = Xdir[i];
-		}
-
-		return axis;
+			Origin = new Vec3(Origin[0], Origin[1], Origin[2]),
+			Dir    = new Vec3(Dir[0],    Dir[1],    Dir[2]),
+			Xdir   = new Vec3(Xdir[0],   Xdir[1],   Xdir[2]),
+		};
 	}
 
 	private static void ValidateLength(double[] value, string name)
@@ -312,6 +273,10 @@ public sealed class AxisJsonModel
 			throw new InvalidOperationException($"axis.{name} must have exactly 3 elements.");
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Output JSON モデル
+// ---------------------------------------------------------------------------
 
 public sealed class OutputJsonModel
 {
@@ -339,28 +304,33 @@ public sealed class OutputJsonModel
 	[JsonPropertyAttribute("deltaStlFile")]
 	public string DeltaStlFile { get; set; } = string.Empty;
 
-	public OutputOptions ToKernelOptions()
+	public OutputOptions ToKernelOptions() => new()
 	{
-		return new OutputOptions
-		{
-			LinearDeflection = LinearDeflection,
-			AngularDeflection = AngularDeflection,
-			Parallel = Parallel,
-		};
-	}
+		LinearDeflection  = LinearDeflection,
+		AngularDeflection = AngularDeflection,
+		Parallel          = Parallel,
+	};
 }
+
+// ---------------------------------------------------------------------------
+// Kernel job model（L1Kernel への入力）
+// ---------------------------------------------------------------------------
 
 public sealed class KernelJobModel
 {
-	public StockDto Stock { get; set; }
-	public List<FeatureDto> Features { get; set; } = new();
-	public OutputOptions OutputOptions { get; set; }
-	public string OutputDir { get; set; } = string.Empty;
-	public string StepFile { get; set; } = string.Empty;
-	public string StlFile { get; set; } = string.Empty;
-	public string DeltaStepFile { get; set; } = string.Empty;
-	public string DeltaStlFile { get; set; } = string.Empty;
+	public StockDto             Stock         { get; set; }
+	public List<FeatureJsonModel> Features    { get; set; } = new();
+	public OutputOptions        OutputOptions { get; set; }
+	public string               OutputDir     { get; set; } = string.Empty;
+	public string               StepFile      { get; set; } = string.Empty;
+	public string               StlFile       { get; set; } = string.Empty;
+	public string               DeltaStepFile { get; set; } = string.Empty;
+	public string               DeltaStlFile  { get; set; } = string.Empty;
 }
+
+// ---------------------------------------------------------------------------
+// JSON デシリアライズ ユーティリティ
+// ---------------------------------------------------------------------------
 
 public static class JsonJobConverter
 {
@@ -368,7 +338,6 @@ public static class JsonJobConverter
 	{
 		var model = JsonSerializer.Deserialize<JobJsonModel>(json)
 			?? throw new InvalidOperationException("Failed to deserialize job json.");
-
 		return model;
 	}
 
@@ -376,8 +345,6 @@ public static class JsonJobConverter
 	{
 		if (!File.Exists(jsonPath))
 			throw new FileNotFoundException("JSON file not found.", jsonPath);
-
-		var json = File.ReadAllText(jsonPath);
-		return Deserialize(json);
+		return Deserialize(File.ReadAllText(jsonPath));
 	}
 }

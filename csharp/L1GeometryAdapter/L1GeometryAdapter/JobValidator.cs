@@ -2,7 +2,7 @@ namespace L1GeometryAdapter;
 
 public static class JobValidator
 {
-	private const int TurnProfileMax = 64;
+	private const int Path2DSegmentMax = 128;
 
 	public static List<ValidationError> Validate(JobJsonModel job)
 	{
@@ -23,9 +23,9 @@ public static class JobValidator
 		// Per-feature validation
 		for (int i = 0; i < job.Features.Count; i++)
 		{
-			var feature = job.Features[i];
+			var feature     = job.Features[i];
 			var featureType = (feature.Type ?? string.Empty).ToUpperInvariant();
-			var basePath = $"features[{i}]";
+			var basePath    = $"features[{i}]";
 
 			switch (featureType)
 			{
@@ -48,7 +48,7 @@ public static class JobValidator
 						errors.Add(Error("MISSING_PAYLOAD", $"{basePath}.turnOd", "feature.turnOd is required for type TURN_OD."));
 					else
 					{
-						ValidateTurnProfile(feature.TurnOd.Profile, $"{basePath}.turnOd.profile", errors);
+						ValidatePath2DProfile(feature.TurnOd.Profile, $"{basePath}.turnOd.profile", requireClosed: true, errors);
 						ValidateAxis(feature.TurnOd.Axis, $"{basePath}.turnOd.axis", errors);
 					}
 					break;
@@ -58,8 +58,20 @@ public static class JobValidator
 						errors.Add(Error("MISSING_PAYLOAD", $"{basePath}.turnId", "feature.turnId is required for type TURN_ID."));
 					else
 					{
-						ValidateTurnProfile(feature.TurnId.Profile, $"{basePath}.turnId.profile", errors);
+						ValidatePath2DProfile(feature.TurnId.Profile, $"{basePath}.turnId.profile", requireClosed: true, errors);
 						ValidateAxis(feature.TurnId.Axis, $"{basePath}.turnId.axis", errors);
+					}
+					break;
+
+				case "MILL_CONTOUR":
+					if (feature.MillContour is null)
+						errors.Add(Error("MISSING_PAYLOAD", $"{basePath}.millContour", "feature.millContour is required for type MILL_CONTOUR."));
+					else
+					{
+						ValidatePath2DProfile(feature.MillContour.Profile, $"{basePath}.millContour.profile", requireClosed: true, errors);
+						if (feature.MillContour.Depth <= 0)
+							errors.Add(Error("INVALID_DEPTH", $"{basePath}.millContour.depth", "millContour.depth must be greater than 0."));
+						ValidateAxis(feature.MillContour.Axis, $"{basePath}.millContour.axis", errors);
 					}
 					break;
 
@@ -104,7 +116,8 @@ public static class JobValidator
 			errors.Add(Error("AXIS_LENGTH", $"{path}.xdir", $"{path}.xdir must have exactly 3 elements."));
 	}
 
-	private static void ValidateTurnProfile(List<TurnProfilePointJsonModel>? profile, string path, List<ValidationError> errors)
+	private static void ValidatePath2DProfile(Path2DProfileJsonModel? profile, string path,
+	                                           bool requireClosed, List<ValidationError> errors)
 	{
 		if (profile is null)
 		{
@@ -112,10 +125,23 @@ public static class JobValidator
 			return;
 		}
 
-		if (profile.Count < 2)
-			errors.Add(Error("TURN_PROFILE_TOO_SHORT", path, "Turn profile requires at least 2 points."));
-		if (profile.Count > TurnProfileMax)
-			errors.Add(Error("TURN_PROFILE_TOO_LONG", path, $"Turn profile supports at most {TurnProfileMax} points."));
+		if (profile.Segments.Count == 0)
+			errors.Add(Error("PROFILE_EMPTY", path, $"{path} must contain at least one segment."));
+		else if (profile.Segments.Count > Path2DSegmentMax)
+			errors.Add(Error("PROFILE_TOO_LONG", path, $"{path} supports at most {Path2DSegmentMax} segments."));
+
+		if (requireClosed && !profile.Closed)
+			errors.Add(Error("PROFILE_NOT_CLOSED", $"{path}.closed", $"{path}.closed must be true."));
+
+		for (int i = 0; i < profile.Segments.Count; i++)
+		{
+			var seg     = profile.Segments[i];
+			var segPath = $"{path}.segments[{i}]";
+			var segType = (seg.Type ?? string.Empty).Trim().ToUpperInvariant();
+			if (segType != "LINE" && segType != "ARC")
+				errors.Add(Error("INVALID_SEGMENT_TYPE", $"{segPath}.type",
+				                 $"{segPath}.type must be LINE or ARC."));
+		}
 	}
 
 	private static ValidationError Error(string code, string path, string message)

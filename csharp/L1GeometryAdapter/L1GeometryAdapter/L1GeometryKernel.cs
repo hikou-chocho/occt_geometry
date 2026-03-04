@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 
 namespace L1GeometryAdapter
@@ -7,12 +7,21 @@ namespace L1GeometryAdapter
     // Structs / Enums mirroring l1_geometry_kernel.h
     // ---------------------------------------------------------------
 
+    /// <summary>3 つの double をパディングなしで保持する汎用ベクトル型（24 bytes）。</summary>
     [StructLayout(LayoutKind.Sequential)]
-    public unsafe struct AxisDto
+    public struct Vec3
     {
-        public fixed double Origin[3];
-        public fixed double Dir[3];
-        public fixed double Xdir[3];
+        public double X, Y, Z;
+        public Vec3(double x, double y, double z) { X = x; Y = y; Z = z; }
+    }
+
+    /// <summary>C の double[3] × 3 と同一レイアウト（72 bytes）。unsafe 不要。</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct AxisDto
+    {
+        public Vec3 Origin;
+        public Vec3 Dir;
+        public Vec3 Xdir;
     }
 
     public enum StockType : int
@@ -25,68 +34,61 @@ namespace L1GeometryAdapter
     public struct StockDto
     {
         public StockType Type;
-        public double P1;
-        public double P2;
-        public double P3;
-        public AxisDto Axis;
-    }
-
-    public enum FeatureType : int
-    {
-        MillHole   = 1,
-        PocketRect = 2,
-        TurnOd     = 3,
-        TurnId     = 4,
+        public double    P1;
+        public double    P2;
+        public double    P3;
+        public AxisDto   Axis;
     }
 
     [StructLayout(LayoutKind.Sequential)]
     public struct MillHoleFeatureDto
     {
-        public double Radius;
-        public double Depth;
+        public double  Radius;
+        public double  Depth;
         public AxisDto Axis;
     }
 
     [StructLayout(LayoutKind.Sequential)]
     public struct PocketRectFeatureDto
     {
-        public double Width;
-        public double Height;
-        public double Depth;
+        public double  Width;
+        public double  Height;
+        public double  Depth;
         public AxisDto Axis;
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    public unsafe struct TurnOdFeatureDto
+    public struct Path2DPointDto
     {
-        public double TargetDiameter;
-        public double Length;
-        public int ProfileCount;
-        public fixed double ProfileZ[L1GeometryKernelNative.TurnOdProfileMax];
-        public fixed double ProfileRadius[L1GeometryKernelNative.TurnOdProfileMax];
-        public AxisDto Axis;
+        public double U;
+        public double V;
     }
 
+    public enum Path2DSegmentType : int
+    {
+        Line   = 1,
+        Arc    = 2,
+        Spline = 3,
+    }
+
+    public enum ArcDirection : int
+    {
+        CW  = 1,
+        CCW = 2,
+    }
+
+    /// <summary>
+    /// C の Path2DSegmentDto と同一レイアウト（56 bytes）。
+    /// doubles を先頭に配置するためパディングなし。unsafe 不要。
+    /// </summary>
     [StructLayout(LayoutKind.Sequential)]
-    public unsafe struct TurnIdFeatureDto
+    public struct Path2DSegmentDto
     {
-        public double TargetDiameter;
-        public double Length;
-        public int ProfileCount;
-        public fixed double ProfileZ[L1GeometryKernelNative.TurnOdProfileMax];
-        public fixed double ProfileRadius[L1GeometryKernelNative.TurnOdProfileMax];
-        public AxisDto Axis;
-    }
-
-    // C側: FeatureDto.u はオフセット4から始まる union
-    [StructLayout(LayoutKind.Explicit,Pack =8)]
-    public struct FeatureDto
-    {
-        [FieldOffset(0)] public FeatureType Type;
-        [FieldOffset(8)] public MillHoleFeatureDto MillHole;
-        [FieldOffset(8)] public PocketRectFeatureDto PocketRect;
-        [FieldOffset(8)] public TurnOdFeatureDto TurnOd;
-        [FieldOffset(8)] public TurnIdFeatureDto TurnId;
+        public Path2DPointDto    From;
+        public Path2DPointDto    To;
+        public Path2DPointDto    Center;
+        public Path2DSegmentType Type;
+        public ArcDirection      ArcDirection;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -107,9 +109,9 @@ namespace L1GeometryAdapter
     public struct OutputOptions
     {
         public OutputFormat Format;
-        public double LinearDeflection;
-        public double AngularDeflection;
-        public int Parallel;
+        public double       LinearDeflection;
+        public double       AngularDeflection;
+        public int          Parallel;
     }
 
     // ---------------------------------------------------------------
@@ -118,8 +120,6 @@ namespace L1GeometryAdapter
 
     internal static class L1GeometryKernelNative
     {
-        public const int TurnOdProfileMax = 64;
-
         private const string Dll = "l1_geometry_kernel";
 
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
@@ -132,22 +132,54 @@ namespace L1GeometryAdapter
         internal static extern int L1_CreateStock(IntPtr kernel, ref StockDto dto, out int outStockId);
 
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern int L1_ApplyFeature(IntPtr kernel, int stockId, ref FeatureDto feature, out OperationResult outResult);
+        internal static extern int L1_ApplyMillHole(
+            IntPtr kernel, int stockId,
+            ref MillHoleFeatureDto dto,
+            out OperationResult outResult);
+
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern int L1_ApplyPocketRect(
+            IntPtr kernel, int stockId,
+            ref PocketRectFeatureDto dto,
+            out OperationResult outResult);
+
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern int L1_ApplyTurnOd(
+            IntPtr kernel, int stockId,
+            ref AxisDto axis,
+            [In] Path2DSegmentDto[] segments, int segmentCount, int closed,
+            out OperationResult outResult);
+
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern int L1_ApplyTurnId(
+            IntPtr kernel, int stockId,
+            ref AxisDto axis,
+            [In] Path2DSegmentDto[] segments, int segmentCount, int closed,
+            out OperationResult outResult);
+
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern int L1_ApplyMillContour(
+            IntPtr kernel, int stockId,
+            ref AxisDto axis,
+            [In] Path2DSegmentDto[] segments, int segmentCount, int closed,
+            double depth,
+            out OperationResult outResult);
 
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         internal static extern int L1_DeleteShape(IntPtr kernel, int shapeId);
 
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
-        internal static extern int L1_ExportShape(IntPtr kernel, int shapeId, ref OutputOptions opt, string filePathUtf8);
+        internal static extern int L1_ExportShape(
+            IntPtr kernel, int shapeId,
+            ref OutputOptions opt,
+            string filePathUtf8);
     }
 
     // ---------------------------------------------------------------
     // Public API — IDisposable ラッパー
     // ---------------------------------------------------------------
 
-    /// <summary>
-    /// l1_geometry_kernel のライフタイムを管理する。
-    /// </summary>
+    /// <summary>l1_geometry_kernel のライフタイムを管理する。</summary>
     public sealed class L1Kernel : IDisposable
     {
         private readonly IntPtr _handle;
@@ -163,7 +195,6 @@ namespace L1GeometryAdapter
 
         // --- Stock ---
 
-        /// <summary>ストックを作成して Shape ID を返す。Dispose 時に自動削除される。</summary>
         public int CreateStock(ref StockDto dto)
         {
             ThrowIfDisposed();
@@ -173,32 +204,65 @@ namespace L1GeometryAdapter
             return id;
         }
 
-        // --- Feature ---
+        // --- Features ---
 
-        /// <summary>
-        /// フィーチャを順番に適用し、各フィーチャの OperationResult を返す。
-        /// </summary>
-        public IReadOnlyList<OperationResult> ApplyFeatures(int stockId, IEnumerable<FeatureDto> features)
+        public OperationResult ApplyMillHole(int stockId, MillHoleFeatureDto dto)
         {
             ThrowIfDisposed();
-            var results = new List<OperationResult>();
-            int currentShapeId = stockId;
-            foreach (var feature in features)
-            {
-                var f = feature;
-                int rc = L1GeometryKernelNative.L1_ApplyFeature(_handle, currentShapeId, ref f, out OperationResult result);
-                ThrowIfError(rc, nameof(L1GeometryKernelNative.L1_ApplyFeature));
-                _trackedShapes.Push(result.ResultShapeId);
-                _trackedShapes.Push(result.DeltaShapeId);
-                results.Add(result);
-                currentShapeId = result.ResultShapeId;
-            }
-            return results;
+            int rc = L1GeometryKernelNative.L1_ApplyMillHole(_handle, stockId, ref dto, out var result);
+            ThrowIfError(rc, nameof(L1GeometryKernelNative.L1_ApplyMillHole));
+            TrackResult(result);
+            return result;
+        }
+
+        public OperationResult ApplyPocketRect(int stockId, PocketRectFeatureDto dto)
+        {
+            ThrowIfDisposed();
+            int rc = L1GeometryKernelNative.L1_ApplyPocketRect(_handle, stockId, ref dto, out var result);
+            ThrowIfError(rc, nameof(L1GeometryKernelNative.L1_ApplyPocketRect));
+            TrackResult(result);
+            return result;
+        }
+
+        public OperationResult ApplyTurnOd(int stockId, AxisDto axis,
+                                           Path2DSegmentDto[] segments, bool closed)
+        {
+            ThrowIfDisposed();
+            int rc = L1GeometryKernelNative.L1_ApplyTurnOd(
+                _handle, stockId, ref axis, segments, segments.Length, closed ? 1 : 0,
+                out var result);
+            ThrowIfError(rc, nameof(L1GeometryKernelNative.L1_ApplyTurnOd));
+            TrackResult(result);
+            return result;
+        }
+
+        public OperationResult ApplyTurnId(int stockId, AxisDto axis,
+                                           Path2DSegmentDto[] segments, bool closed)
+        {
+            ThrowIfDisposed();
+            int rc = L1GeometryKernelNative.L1_ApplyTurnId(
+                _handle, stockId, ref axis, segments, segments.Length, closed ? 1 : 0,
+                out var result);
+            ThrowIfError(rc, nameof(L1GeometryKernelNative.L1_ApplyTurnId));
+            TrackResult(result);
+            return result;
+        }
+
+        public OperationResult ApplyMillContour(int stockId, AxisDto axis,
+                                                Path2DSegmentDto[] segments, bool closed,
+                                                double depth)
+        {
+            ThrowIfDisposed();
+            int rc = L1GeometryKernelNative.L1_ApplyMillContour(
+                _handle, stockId, ref axis, segments, segments.Length, closed ? 1 : 0,
+                depth, out var result);
+            ThrowIfError(rc, nameof(L1GeometryKernelNative.L1_ApplyMillContour));
+            TrackResult(result);
+            return result;
         }
 
         // --- Export ---
 
-        /// <summary>シェイプをファイルにエクスポートする。</summary>
         public void ExportShape(int shapeId, OutputOptions opt, string filePath)
         {
             ThrowIfDisposed();
@@ -213,7 +277,6 @@ namespace L1GeometryAdapter
             if (_disposed) return;
             _disposed = true;
 
-            // 全 Shape を逆順削除してからカーネルを破棄
             while (_trackedShapes.TryPop(out int id))
                 L1GeometryKernelNative.L1_DeleteShape(_handle, id);
 
@@ -221,6 +284,12 @@ namespace L1GeometryAdapter
         }
 
         // --- helpers ---
+
+        private void TrackResult(OperationResult result)
+        {
+            _trackedShapes.Push(result.ResultShapeId);
+            _trackedShapes.Push(result.DeltaShapeId);
+        }
 
         private void ThrowIfDisposed()
         {
