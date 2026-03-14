@@ -18,41 +18,55 @@
         "profile": {
           "type": "PATH_2D",
           "plane": "UV",
-          "start": { "u": -20.0, "v": 10.0 },
+          "start": { "u": -25.0, "v": 15.0 },
           "segments": [
             {
               "type": "LINE",
-              "from": { "u": -20.0, "v": 10.0 },
-              "to": { "u": 20.0, "v": 10.0 }
+              "from": { "u": -25.0, "v": 15.0 },
+              "to": { "u": 25.0, "v": 15.0 }
             },
             {
               "type": "ARC",
-              "from": { "u": 20.0, "v": 10.0 },
-              "to": { "u": 30.0, "v": 0.0 },
-              "center": { "u": 20.0, "v": 0.0 },
-              "arcDirection": "CCW"
+              "from": { "u": 25.0, "v": 15.0 },
+              "to": { "u": 30.0, "v": 10.0 },
+              "center": { "u": 25.0, "v": 10.0 },
+              "arcDirection": "CW"
             },
             {
               "type": "LINE",
-              "from": { "u": 30.0, "v": 0.0 },
+              "from": { "u": 30.0, "v": 10.0 },
               "to": { "u": 30.0, "v": -10.0 }
             },
             {
-              "type": "LINE",
+              "type": "ARC",
               "from": { "u": 30.0, "v": -10.0 },
-              "to": { "u": -30.0, "v": -10.0 }
+              "to": { "u": 25.0, "v": -15.0 },
+              "center": { "u": 25.0, "v": -10.0 },
+              "arcDirection": "CW"
+            },
+            {
+              "type": "LINE",
+              "from": { "u": 25.0, "v": -15.0 },
+              "to": { "u": -25.0, "v": -15.0 }
+            },
+            {
+              "type": "ARC",
+              "from": { "u": -25.0, "v": -15.0 },
+              "to": { "u": -30.0, "v": -10.0 },
+              "center": { "u": -25.0, "v": -10.0 },
+              "arcDirection": "CW"
             },
             {
               "type": "LINE",
               "from": { "u": -30.0, "v": -10.0 },
-              "to": { "u": -30.0, "v": 0.0 }
+              "to": { "u": -30.0, "v": 10.0 }
             },
             {
               "type": "ARC",
-              "from": { "u": -30.0, "v": 0.0 },
-              "to": { "u": -20.0, "v": 10.0 },
-              "center": { "u": -20.0, "v": 0.0 },
-              "arcDirection": "CCW"
+              "from": { "u": -30.0, "v": 10.0 },
+              "to": { "u": -25.0, "v": 15.0 },
+              "center": { "u": -25.0, "v": 10.0 },
+              "arcDirection": "CW"
             }
           ],
           "closed": true
@@ -70,9 +84,9 @@
     "angularDeflection": 0.5,
     "parallel": 1,
     "dir": "out",
-    "stepFile": "mill_contour_result.step",
-    "stlFile": "mill_contour_result.stl",
-    "deltaStepFile": "mill_contour_delta.step",
-    "deltaStlFile": "mill_contour_delta.stl"
+    "stepFile": "mill_contour_arc_result.step",
+    "stlFile": "mill_contour_arc_result.stl",
+    "deltaStepFile": "mill_contour_arc_delta.step",
+    "deltaStlFile": "mill_contour_arc_delta.stl"
   }
 }
