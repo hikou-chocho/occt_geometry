@@ -120,6 +120,10 @@ L1_API int   L1_ApplyMillContour(void* kernel, int stockId,
 
 L1_API int   L1_DeleteShape(void* kernel, int shapeId);
 
+L1_API int   L1_ImportStepAsShape(void* kernel,
+                                  const char* filePathUtf8,
+                                  int* outShapeId);
+
 L1_API int   L1_ExportShape(void* kernel,
                             int shapeId,
                             const OutputOptions* opt,

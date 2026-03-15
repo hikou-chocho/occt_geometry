@@ -70,17 +70,25 @@ const statusEl = document.getElementById("status");
 const btnFormat = document.getElementById("btnFormat");
 const btnRun = document.getElementById("btnRun");
 const btnReset = document.getElementById("btnReset");
+const btnToggleCompare = document.getElementById("btnToggleCompare");
+const viewerLayout = document.getElementById("viewerLayout");
+const referenceDropZone = document.getElementById("referenceDropZone");
+const referenceFileInput = document.getElementById("referenceFileInput");
 
 btnFormat.addEventListener("click", formatJson);
 btnRun.addEventListener("click", runPipeline);
 btnReset.addEventListener("click", resetEditor);
+btnToggleCompare.addEventListener("click", toggleCompareViewer);
 
-let scene;
-let camera;
-let renderer;
-let controls;
-let currentMesh = null;
 const worldAxesSize = 120;
+const viewerStates = {
+  main: null,
+  reference: null
+};
+
+let compareVisible = false;
+let syncCleanup = null;
+let isSyncingCamera = false;
 
 function setStatus(message) {
   const timestamp = new Date().toLocaleTimeString();
@@ -135,13 +143,17 @@ async function runPipeline() {
     }
 
     setStatus(`STL 読み込み: ${body.finalStlUrl}`);
-    await loadStlFromApi(body.finalStlUrl);
+    await loadStlFromApi(body.finalStlUrl, viewerStates.main);
   } catch (error) {
     setStatus(`通信エラー: ${error.message}`);
   }
 }
 
-async function loadStlFromApi(url) {
+async function loadStlFromApi(url, viewerState) {
+  if (!viewerState) {
+    throw new Error("Viewer is not initialized.");
+  }
+
   const response = await fetch(`${url}?t=${Date.now()}`);
   if (!response.ok) {
     const text = await response.text();
@@ -150,24 +162,22 @@ async function loadStlFromApi(url) {
 
   const blob = await response.blob();
   const objectUrl = URL.createObjectURL(blob);
-  loadStl(objectUrl, true);
+  loadStl(viewerState, objectUrl, true);
 }
 
-function initThree() {
-  const container = document.getElementById("viewer");
-
-  scene = new THREE.Scene();
+function createViewer(containerId) {
+  const container = document.getElementById(containerId);
+  const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x111111);
 
-  camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 1, 5000);
+  const camera = new THREE.PerspectiveCamera(45, 1, 1, 5000);
   camera.position.set(180, 140, 180);
 
-  renderer = new THREE.WebGLRenderer({ antialias: true });
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(window.devicePixelRatio || 1);
-  renderer.setSize(container.clientWidth, container.clientHeight);
   container.appendChild(renderer.domElement);
 
-  controls = new OrbitControls(camera, renderer.domElement);
+  const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
 
   scene.add(new THREE.AmbientLight(0xffffff, 0.6));
@@ -181,34 +191,65 @@ function initThree() {
   const axes = new THREE.AxesHelper(worldAxesSize);
   scene.add(axes);
 
-  window.addEventListener("resize", onResize);
-  animate();
+  return {
+    container,
+    scene,
+    camera,
+    renderer,
+    controls,
+    currentMesh: null
+  };
+}
+
+function resizeViewer(viewerState) {
+  if (!viewerState) return;
+  const width = Math.max(1, viewerState.container.clientWidth);
+  const height = Math.max(1, viewerState.container.clientHeight);
+  viewerState.camera.aspect = width / height;
+  viewerState.camera.updateProjectionMatrix();
+  viewerState.renderer.setSize(width, height);
 }
 
 function onResize() {
-  const container = document.getElementById("viewer");
-  const width = container.clientWidth;
-  const height = container.clientHeight;
-  camera.aspect = width / height;
-  camera.updateProjectionMatrix();
-  renderer.setSize(width, height);
+  resizeViewer(viewerStates.main);
+  if (compareVisible) {
+    resizeViewer(viewerStates.reference);
+  }
 }
 
 function animate() {
   requestAnimationFrame(animate);
-  controls.update();
-  renderer.render(scene, camera);
+
+  if (viewerStates.main) {
+    viewerStates.main.controls.update();
+    viewerStates.main.renderer.render(viewerStates.main.scene, viewerStates.main.camera);
+  }
+
+  if (compareVisible && viewerStates.reference) {
+    viewerStates.reference.controls.update();
+    viewerStates.reference.renderer.render(viewerStates.reference.scene, viewerStates.reference.camera);
+  }
 }
 
-function loadStl(url, revokeOnDone = false) {
+function disposeCurrentMesh(viewerState) {
+  if (!viewerState || !viewerState.currentMesh) return;
+
+  viewerState.scene.remove(viewerState.currentMesh);
+  viewerState.currentMesh.geometry.dispose();
+  if (Array.isArray(viewerState.currentMesh.material)) {
+    viewerState.currentMesh.material.forEach((mat) => mat.dispose());
+  } else if (viewerState.currentMesh.material) {
+    viewerState.currentMesh.material.dispose();
+  }
+  viewerState.currentMesh = null;
+}
+
+function loadStl(viewerState, url, revokeOnDone = false) {
   const loader = new STLLoader();
   loader.load(
     url,
     (geometry) => {
-      if (currentMesh) {
-        scene.remove(currentMesh);
-        currentMesh.geometry.dispose();
-      }
+      disposeCurrentMesh(viewerState);
 
       geometry.computeVertexNormals();
       geometry.center();
@@ -217,15 +258,20 @@ function loadStl(url, revokeOnDone = false) {
       const mesh = new THREE.Mesh(geometry, material);
       mesh.rotation.x = -Math.PI / 2;
 
-      scene.add(mesh);
-      currentMesh = mesh;
+      viewerState.scene.add(mesh);
+      viewerState.currentMesh = mesh;
 
       const box = new THREE.Box3().setFromObject(mesh);
       const size = box.getSize(new THREE.Vector3()).length() || 120;
       const center = box.getCenter(new THREE.Vector3());
-      controls.target.copy(center);
-      camera.position.set(center.x + size, center.y + size * 0.8, center.z + size);
-      camera.lookAt(center);
+      viewerState.controls.target.copy(center);
+      viewerState.camera.position.set(center.x + size, center.y + size * 0.8, center.z + size);
+      viewerState.camera.lookAt(center);
+      viewerState.controls.update();
+
+      if (compareVisible && viewerStates.main && viewerStates.reference) {
+        syncCameraState(viewerState, viewerState === viewerStates.main ? viewerStates.reference : viewerStates.main);
+      }
 
       if (revokeOnDone) {
         URL.revokeObjectURL(url);
@@ -241,5 +287,168 @@ function loadStl(url, revokeOnDone = false) {
   );
 }
 
+function syncCameraState(sourceViewer, targetViewer) {
+  if (!sourceViewer || !targetViewer || isSyncingCamera) return;
+
+  isSyncingCamera = true;
+  targetViewer.camera.position.copy(sourceViewer.camera.position);
+  targetViewer.camera.quaternion.copy(sourceViewer.camera.quaternion);
+  targetViewer.camera.zoom = sourceViewer.camera.zoom;
+  targetViewer.camera.updateProjectionMatrix();
+  targetViewer.controls.target.copy(sourceViewer.controls.target);
+  targetViewer.controls.update();
+  isSyncingCamera = false;
+}
+
+function startCameraSync() {
+  stopCameraSync();
+
+  if (!viewerStates.main || !viewerStates.reference) return;
+
+  const onMainChanged = () => syncCameraState(viewerStates.main, viewerStates.reference);
+  const onReferenceChanged = () => syncCameraState(viewerStates.reference, viewerStates.main);
+
+  viewerStates.main.controls.addEventListener("change", onMainChanged);
+  viewerStates.reference.controls.addEventListener("change", onReferenceChanged);
+
+  syncCleanup = () => {
+    viewerStates.main?.controls.removeEventListener("change", onMainChanged);
+    viewerStates.reference?.controls.removeEventListener("change", onReferenceChanged);
+    syncCleanup = null;
+  };
+}
+
+function stopCameraSync() {
+  if (syncCleanup) {
+    syncCleanup();
+  }
+}
+
+function ensureReferenceViewer() {
+  if (!viewerStates.reference) {
+    viewerStates.reference = createViewer("referenceViewer");
+  }
+  resizeViewer(viewerStates.reference);
+}
+
+function setCompareVisibility(visible) {
+  compareVisible = visible;
+
+  viewerLayout.classList.toggle("compare-active", visible);
+  btnToggleCompare.textContent = visible ? "比較ビュー非表示" : "比較ビュー表示";
+
+  if (visible) {
+    ensureReferenceViewer();
+    resizeViewer(viewerStates.main);
+    resizeViewer(viewerStates.reference);
+    startCameraSync();
+    setStatus("比較ビューを表示しました。STEPをドロップしてください。");
+  } else {
+    stopCameraSync();
+    resizeViewer(viewerStates.main);
+    setStatus("比較ビューを非表示にしました。");
+  }
+}
+
+function toggleCompareViewer() {
+  setCompareVisibility(!compareVisible);
+}
+
+function validateStepFile(file) {
+  if (!file) return "ファイルが選択されていません。";
+
+  const lower = file.name.toLowerCase();
+  if (!(lower.endsWith(".step") || lower.endsWith(".stp"))) {
+    return "STEPファイル（.step/.stp）のみ対応しています。";
+  }
+
+  const maxUploadBytes = 50 * 1024 * 1024;
+  if (file.size > maxUploadBytes) {
+    return "STEPファイルが大きすぎます（最大50MB）。";
+  }
+
+  return null;
+}
+
+async function importReferenceStep(file) {
+  const fileError = validateStepFile(file);
+  if (fileError) {
+    setStatus(fileError);
+    return;
+  }
+
+  if (!compareVisible) {
+    setCompareVisibility(true);
+  }
+
+  ensureReferenceViewer();
+  setStatus(`正解STEP取込中: ${file.name}`);
+
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const response = await fetch("/pipeline/reference-step", {
+      method: "POST",
+      body: formData
+    });
+
+    const body = await response.json();
+    if (!response.ok) {
+      const msg = body?.error || body?.detail || `HTTP ${response.status}`;
+      setStatus(`取込失敗: ${msg}`);
+      return;
+    }
+
+    setStatus(`参照STL 読み込み: ${body.referenceStlUrl}`);
+    await loadStlFromApi(body.referenceStlUrl, viewerStates.reference);
+    setStatus("正解STEPを読み込みました。");
+  } catch (error) {
+    setStatus(`取込エラー: ${error.message}`);
+  }
+}
+
+function setupReferenceDropZone() {
+  const preventDefaults = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  ["dragenter", "dragover", "dragleave", "drop"].forEach((eventName) => {
+    referenceDropZone.addEventListener(eventName, preventDefaults);
+  });
+
+  ["dragenter", "dragover"].forEach((eventName) => {
+    referenceDropZone.addEventListener(eventName, () => {
+      referenceDropZone.classList.add("drag-over");
+    });
+  });
+
+  ["dragleave", "drop"].forEach((eventName) => {
+    referenceDropZone.addEventListener(eventName, () => {
+      referenceDropZone.classList.remove("drag-over");
+    });
+  });
+
+  referenceDropZone.addEventListener("drop", (event) => {
+    const file = event.dataTransfer?.files?.[0];
+    void importReferenceStep(file);
+  });
+
+  referenceDropZone.addEventListener("click", () => {
+    referenceFileInput.click();
+  });
+
+  referenceFileInput.addEventListener("change", () => {
+    const file = referenceFileInput.files?.[0];
+    void importReferenceStep(file);
+    referenceFileInput.value = "";
+  });
+}
+
 resetEditor();
-initThree();
+viewerStates.main = createViewer("viewer");
+window.addEventListener("resize", onResize);
+setupReferenceDropZone();
+onResize();
+animate();

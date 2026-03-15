@@ -106,6 +106,79 @@ app.MapPost("/pipeline/run", (JobJsonModel request) =>
 	}
 });
 
+app.MapPost("/pipeline/reference-step", async (HttpRequest request) =>
+{
+	if (!request.HasFormContentType)
+		return Results.BadRequest(new { error = "multipart/form-data is required." });
+
+	try
+	{
+		var form = await request.ReadFormAsync();
+		var file = form.Files["file"] ?? form.Files.FirstOrDefault();
+		if (file is null || file.Length <= 0)
+			return Results.BadRequest(new { error = "STEP file is required." });
+
+		const long maxUploadBytes = 50L * 1024L * 1024L;
+		if (file.Length > maxUploadBytes)
+			return Results.BadRequest(new { error = "STEP file is too large. Max 50MB." });
+
+		var ext = Path.GetExtension(file.FileName)?.ToLowerInvariant();
+		if (ext is not ".step" and not ".stp")
+			return Results.BadRequest(new { error = "Only .step/.stp files are supported." });
+
+		var refId = $"ref-{DateTime.UtcNow:yyyyMMddHHmmssfff}-{Guid.NewGuid():N}";
+		var refDir = Path.Combine(outputRoot, "reference", refId);
+		Directory.CreateDirectory(refDir);
+
+		var stepFile = SanitizeFileName(file.FileName, "reference.step");
+		var stlFile = "reference.stl";
+		var stepPath = Path.Combine(refDir, stepFile);
+		var stlPath = Path.Combine(refDir, stlFile);
+
+		await using (var fs = System.IO.File.Create(stepPath))
+		{
+			await file.CopyToAsync(fs);
+		}
+
+		using var kernel = new L1Kernel();
+		var shapeId = kernel.ImportStep(stepPath);
+
+		var stlOpt = new OutputOptions
+		{
+			Format = OutputFormat.Stl,
+			LinearDeflection = 0.1,
+			AngularDeflection = 0.5,
+			Parallel = 1,
+		};
+
+		kernel.ExportShape(shapeId, stlOpt, stlPath);
+
+		try
+		{
+			System.IO.File.Delete(stepPath);
+		}
+		catch
+		{
+		}
+
+		CleanupOldReferenceDirectories(Path.Combine(outputRoot, "reference"), TimeSpan.FromMinutes(10));
+
+		return Results.Ok(new ReferenceStepResponse
+		{
+			ReferenceId = refId,
+			ReferenceStlUrl = $"/output/reference/{refId}/{stlFile}",
+		});
+	}
+	catch (InvalidOperationException ex)
+	{
+		return Results.BadRequest(new { error = ex.Message });
+	}
+	catch (Exception ex)
+	{
+		return Results.Problem(title: "Reference STEP import failed", detail: ex.Message, statusCode: 500);
+	}
+});
+
 app.Run();
 
 static string SanitizeFileName(string? value, string fallback)
@@ -165,6 +238,26 @@ static void TryDeleteDirectory(string path)
 	}
 }
 
+static void CleanupOldReferenceDirectories(string referenceRoot, TimeSpan ttl)
+{
+	try
+	{
+		if (!Directory.Exists(referenceRoot))
+			return;
+
+		var now = DateTime.UtcNow;
+		foreach (var dir in Directory.EnumerateDirectories(referenceRoot))
+		{
+			var lastWriteUtc = Directory.GetLastWriteTimeUtc(dir);
+			if ((now - lastWriteUtc) > ttl)
+				TryDeleteDirectory(dir);
+		}
+	}
+	catch
+	{
+	}
+}
+
 sealed class PipelineRunResponse
 {
 	public string RunId { get; set; } = string.Empty;
@@ -172,4 +265,10 @@ sealed class PipelineRunResponse
 	public string FinalStlUrl { get; set; } = string.Empty;
 	public string DeltaStepUrl { get; set; } = string.Empty;
 	public string DeltaStlUrl { get; set; } = string.Empty;
+}
+
+sealed class ReferenceStepResponse
+{
+	public string ReferenceId { get; set; } = string.Empty;
+	public string ReferenceStlUrl { get; set; } = string.Empty;
 }

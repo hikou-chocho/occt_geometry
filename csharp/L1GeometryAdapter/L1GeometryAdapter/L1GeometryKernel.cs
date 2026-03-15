@@ -169,6 +169,12 @@ namespace L1GeometryAdapter
         internal static extern int L1_DeleteShape(IntPtr kernel, int shapeId);
 
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
+        internal static extern int L1_ImportStepAsShape(
+            IntPtr kernel,
+            string filePathUtf8,
+            out int outShapeId);
+
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
         internal static extern int L1_ExportShape(
             IntPtr kernel, int shapeId,
             ref OutputOptions opt,
@@ -262,6 +268,15 @@ namespace L1GeometryAdapter
         }
 
         // --- Export ---
+
+        public int ImportStep(string filePath)
+        {
+            ThrowIfDisposed();
+            int rc = L1GeometryKernelNative.L1_ImportStepAsShape(_handle, filePath, out int shapeId);
+            ThrowIfError(rc, nameof(L1GeometryKernelNative.L1_ImportStepAsShape));
+            _trackedShapes.Push(shapeId);
+            return shapeId;
+        }
 
         public void ExportShape(int shapeId, OutputOptions opt, string filePath)
         {

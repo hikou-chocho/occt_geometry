@@ -19,6 +19,7 @@
       border-right: 1px solid #d0d0d0;
       background: #f7f7f7;
       min-width: 320px;
+      min-height: 0;
     }
     #editor {
       flex: 1;
@@ -55,6 +56,65 @@
     #viewer {
       background: #111;
       position: relative;
+      flex: 1;
+      min-height: 0;
+    }
+    #viewerLayout {
+      display: grid;
+      grid-template-columns: 1fr;
+      min-width: 0;
+      min-height: 0;
+      height: 100%;
+    }
+    #viewerLayout.compare-active {
+      grid-template-columns: 1fr 1fr;
+    }
+    .viewerPane {
+      min-width: 0;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      border-left: 1px solid #2a2a2a;
+      background: #101010;
+      overflow: hidden;
+    }
+    .viewerPaneHeader {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 10px;
+      font-size: 12px;
+      color: #ddd;
+      background: #1a1a1a;
+      border-bottom: 1px solid #2a2a2a;
+    }
+    #referencePane {
+      display: none;
+    }
+    #viewerLayout.compare-active #referencePane {
+      display: flex;
+    }
+    #referenceDropZone {
+      margin: 10px;
+      border: 1px dashed #666;
+      color: #bbb;
+      font-size: 12px;
+      text-align: center;
+      padding: 12px;
+      border-radius: 6px;
+      background: #161616;
+      user-select: none;
+    }
+    #referenceDropZone.drag-over {
+      border-color: #57a2ff;
+      color: #dcecff;
+      background: #1a2634;
+    }
+    #referenceViewer {
+      flex: 1;
+      min-height: 0;
+      background: #111;
+      position: relative;
     }
   </style></head>
 <body>
@@ -62,12 +122,28 @@
     <div id="toolbar">
       <button id="btnFormat" type="button">整形</button>
       <button id="btnRun" type="button">実行して表示</button>
+      <button id="btnToggleCompare" type="button">比較ビュー表示</button>
       <button id="btnReset" type="button">初期値に戻す</button>
     </div>
     <pre id="status"></pre>
     <textarea id="editor" spellcheck="false"></textarea>
   </section>
-  <section id="viewer"></section>
+  <section id="viewerLayout">
+    <section id="mainPane" class="viewerPane">
+      <div class="viewerPaneHeader">
+        <span>編集中モデル</span>
+      </div>
+      <section id="viewer"></section>
+    </section>
+    <section id="referencePane" class="viewerPane">
+      <div class="viewerPaneHeader">
+        <span>正解モデル（STEP）</span>
+      </div>
+      <div id="referenceDropZone">ここにSTEPをDrag & Drop（.step / .stp）</div>
+      <input id="referenceFileInput" type="file" accept=".step,.stp" hidden>
+      <section id="referenceViewer"></section>
+    </section>
+  </section>
 
   <script type="importmap">
   {

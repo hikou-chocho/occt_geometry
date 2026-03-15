@@ -29,6 +29,7 @@
 #include <gp_Dir.hxx>
 #include <gp_Pnt.hxx>
 #include <gp_Vec.hxx>
+#include <STEPControl_Reader.hxx>
 #include <STEPControl_Writer.hxx>
 #include <StlAPI_Writer.hxx>
 #include <TopoDS_Shape.hxx>
@@ -41,7 +42,8 @@ enum ErrorCode {
   ERROR_OCCT_EXCEPTION        = 4,
   ERROR_BOOLEAN_FAILED        = 5,
   ERROR_DELTA_FAILED          = 6,
-  ERROR_EXPORT_FAILED         = 7
+  ERROR_EXPORT_FAILED         = 7,
+  ERROR_IMPORT_FAILED         = 8
 };
 
 namespace {
@@ -602,6 +604,32 @@ int L1_DeleteShape(void* kernel, int shapeId) {
   try {
     auto* impl = static_cast<OcctKernelImpl*>(kernel);
     return impl->Registry().Remove(shapeId) ? ERROR_OK : ERROR_SHAPE_NOT_FOUND;
+  } catch (...) {
+    return MapExceptionToError();
+  }
+}
+
+int L1_ImportStepAsShape(void* kernel,
+                         const char* filePathUtf8,
+                         int* outShapeId) {
+  if (!kernel || !filePathUtf8 || !outShapeId) return ERROR_INVALID_ARGUMENT;
+
+  try {
+    auto* impl = static_cast<OcctKernelImpl*>(kernel);
+
+    STEPControl_Reader reader;
+    if (reader.ReadFile(filePathUtf8) != IFSelect_RetDone)
+      return ERROR_IMPORT_FAILED;
+
+    if (!reader.TransferRoots())
+      return ERROR_IMPORT_FAILED;
+
+    const TopoDS_Shape shape = reader.OneShape();
+    if (shape.IsNull())
+      return ERROR_IMPORT_FAILED;
+
+    *outShapeId = impl->Registry().Add(shape);
+    return ERROR_OK;
   } catch (...) {
     return MapExceptionToError();
   }
