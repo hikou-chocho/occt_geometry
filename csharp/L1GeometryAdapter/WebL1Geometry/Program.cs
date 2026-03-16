@@ -5,7 +5,9 @@ var builder = WebApplication.CreateBuilder(args);
 var app = builder.Build();
 
 var outputRoot = Path.Combine(app.Environment.ContentRootPath, "output");
+var previewRoot = Path.Combine(outputRoot, "preview");
 Directory.CreateDirectory(outputRoot);
+Directory.CreateDirectory(previewRoot);
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
@@ -106,6 +108,78 @@ app.MapPost("/pipeline/run", (JobJsonModel request) =>
 	}
 });
 
+app.MapPost("/pipeline/preview", (PreviewStageRequest request) =>
+{
+	try
+	{
+		var previewId = $"preview-{DateTime.UtcNow:yyyyMMddHHmmssfff}-{Guid.NewGuid():N}";
+		var previewDir = Path.Combine(previewRoot, previewId);
+		Directory.CreateDirectory(previewDir);
+
+		var modelFile = "model.stl";
+		var deltaFile = "delta.stl";
+		var modelPath = Path.Combine(previewDir, modelFile);
+		var deltaPath = Path.Combine(previewDir, deltaFile);
+
+		var stlOpt = CreateStlOutputOptions(request.Job.Output);
+
+		using var kernel = new L1Kernel();
+		var stock = request.Job.Stock.ToKernel();
+		var stockId = kernel.CreateStock(ref stock);
+
+		var stageIndex = request.StageIndex;
+		var featureCount = request.Job.Features.Count;
+
+		if (stageIndex < 0 || featureCount == 0)
+		{
+			kernel.ExportShape(stockId, stlOpt, modelPath);
+			CleanupOldReferenceDirectories(previewRoot, TimeSpan.FromMinutes(10));
+			return Results.Ok(new PreviewStageResponse
+			{
+				StageIndex = stageIndex,
+				ModelStlUrl = $"/output/preview/{previewId}/{modelFile}",
+			});
+		}
+
+		var cappedStageIndex = Math.Min(stageIndex, featureCount - 1);
+		var currentId = stockId;
+		OperationResult lastResult = default;
+
+		for (var i = 0; i <= cappedStageIndex; i++)
+		{
+			lastResult = ApplyFeature(kernel, currentId, request.Job.Features[i]);
+			currentId = lastResult.ResultShapeId;
+		}
+
+		var resultShapeId = stageIndex >= featureCount ? currentId : lastResult.ResultShapeId;
+		kernel.ExportShape(resultShapeId, stlOpt, modelPath);
+
+		string? deltaUrl = null;
+		if (stageIndex < featureCount)
+		{
+			kernel.ExportShape(lastResult.DeltaShapeId, stlOpt, deltaPath);
+			deltaUrl = $"/output/preview/{previewId}/{deltaFile}";
+		}
+
+		CleanupOldReferenceDirectories(previewRoot, TimeSpan.FromMinutes(10));
+
+		return Results.Ok(new PreviewStageResponse
+		{
+			StageIndex = stageIndex,
+			ModelStlUrl = $"/output/preview/{previewId}/{modelFile}",
+			DeltaStlUrl = deltaUrl,
+		});
+	}
+	catch (InvalidOperationException ex)
+	{
+		return Results.BadRequest(new { error = ex.Message });
+	}
+	catch (Exception ex)
+	{
+		return Results.Problem(title: "Preview generation failed", detail: ex.Message, statusCode: 500);
+	}
+});
+
 app.MapPost("/pipeline/reference-step", async (HttpRequest request) =>
 {
 	if (!request.HasFormContentType)
@@ -194,6 +268,17 @@ static string SanitizeFileName(string? value, string fallback)
 	return nameOnly;
 }
 
+static OutputOptions CreateStlOutputOptions(OutputJsonModel output)
+{
+	return new OutputOptions
+	{
+		Format = OutputFormat.Stl,
+		LinearDeflection = output.LinearDeflection,
+		AngularDeflection = output.AngularDeflection,
+		Parallel = output.Parallel,
+	};
+}
+
 static OperationResult ApplyFeature(L1Kernel kernel, int stockId, FeatureJsonModel feature)
 {
 	var type = (feature.Type ?? string.Empty).ToUpperInvariant();
@@ -265,6 +350,19 @@ sealed class PipelineRunResponse
 	public string FinalStlUrl { get; set; } = string.Empty;
 	public string DeltaStepUrl { get; set; } = string.Empty;
 	public string DeltaStlUrl { get; set; } = string.Empty;
+}
+
+sealed class PreviewStageRequest
+{
+	public JobJsonModel Job { get; set; } = new();
+	public int StageIndex { get; set; }
+}
+
+sealed class PreviewStageResponse
+{
+	public int StageIndex { get; set; }
+	public string ModelStlUrl { get; set; } = string.Empty;
+	public string? DeltaStlUrl { get; set; }
 }
 
 sealed class ReferenceStepResponse
