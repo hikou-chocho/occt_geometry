@@ -81,6 +81,12 @@ const referenceDropZone = document.getElementById("referenceDropZone");
 const referenceFileInput = document.getElementById("referenceFileInput");
 const mainPaneHeader = document.querySelector("#mainPane .viewerPaneHeader");
 const referencePaneHeader = document.querySelector("#referencePane .viewerPaneHeader");
+const featureEditOverlayEl = document.getElementById("featureEditOverlay");
+
+const EDITABLE_FEATURE_KEYS = {
+  MILL_HOLE: { path: "millHole", fields: ["radius", "depth"] },
+  POCKET_RECT: { path: "pocketRect", fields: ["width", "height", "depth"] }
+};
 
 const mainViewerTitle = ensureHeaderLine("mainViewerTitle", "viewerPaneHeaderStrong", "Preview");
 const mainViewerSubtitle = ensureHeaderLine("mainViewerSubtitle", "viewerPaneHeaderSub", "Final model");
@@ -104,7 +110,8 @@ const state = {
   jobState: cloneJob(defaultJob),
   selectedItemKey: "output",
   previewCache: new Map(),
-  previewRequestToken: 0
+  previewRequestToken: 0,
+  previewDebounceTimer: null
 };
 
 let compareVisible = false;
@@ -205,6 +212,126 @@ function getSelectedItem() {
   return items.find((item) => item.key === state.selectedItemKey) ?? items[items.length - 1];
 }
 
+function getFeatureIndexFromKey(itemKey) {
+  const match = /^feature-(\d+)$/.exec(itemKey ?? "");
+  return match ? Number.parseInt(match[1], 10) : null;
+}
+
+function getSelectedFeatureTarget() {
+  const featureIndex = getFeatureIndexFromKey(state.selectedItemKey);
+  if (featureIndex == null) {
+    return null;
+  }
+
+  const feature = state.jobState.features?.[featureIndex];
+  if (!feature) {
+    return null;
+  }
+
+  const editableConfig = EDITABLE_FEATURE_KEYS[feature.type];
+  return { feature, featureIndex, editableConfig };
+}
+
+function clearOverlayInputErrorState() {
+  featureEditOverlayEl?.querySelectorAll(".featureEditInput").forEach((input) => {
+    input.classList.remove("input-error");
+  });
+}
+
+function markOverlayInputsError() {
+  featureEditOverlayEl?.querySelectorAll(".featureEditInput").forEach((input) => {
+    input.classList.add("input-error");
+  });
+}
+
+function schedulePreviewRefresh() {
+  if (state.previewDebounceTimer) {
+    window.clearTimeout(state.previewDebounceTimer);
+  }
+
+  state.previewDebounceTimer = window.setTimeout(() => {
+    state.previewDebounceTimer = null;
+    if (state.activeMode === "list") {
+      void loadSelectedPreview();
+    }
+  }, 220);
+}
+
+function renderFeatureEditOverlay() {
+  if (!featureEditOverlayEl) {
+    return;
+  }
+
+  const target = getSelectedFeatureTarget();
+  if (!target) {
+    featureEditOverlayEl.hidden = true;
+    featureEditOverlayEl.replaceChildren();
+    return;
+  }
+
+  const { feature, featureIndex, editableConfig } = target;
+  featureEditOverlayEl.hidden = false;
+  featureEditOverlayEl.replaceChildren();
+
+  const title = document.createElement("div");
+  title.className = "featureEditTitle";
+  title.textContent = `feature${featureIndex + 1}: ${feature.type}`;
+  featureEditOverlayEl.appendChild(title);
+
+  if (!editableConfig) {
+    const readOnly = document.createElement("div");
+    readOnly.className = "featureEditReadonly";
+    readOnly.textContent = "This feature type is read-only in this editor.";
+    featureEditOverlayEl.appendChild(readOnly);
+    return;
+  }
+
+  const container = feature[editableConfig.path];
+  if (!container) {
+    const readOnly = document.createElement("div");
+    readOnly.className = "featureEditReadonly";
+    readOnly.textContent = "Editable payload is missing for this feature.";
+    featureEditOverlayEl.appendChild(readOnly);
+    return;
+  }
+
+  editableConfig.fields.forEach((fieldName) => {
+    const row = document.createElement("div");
+    row.className = "featureEditRow";
+
+    const label = document.createElement("label");
+    label.textContent = fieldName;
+    label.htmlFor = `feature-edit-${featureIndex}-${fieldName}`;
+
+    const input = document.createElement("input");
+    input.id = label.htmlFor;
+    input.type = "number";
+    input.step = "any";
+    input.min = "0";
+    input.className = "featureEditInput";
+    input.value = container[fieldName];
+
+    input.addEventListener("input", () => {
+      const nextValue = Number.parseFloat(input.value);
+      const isValid = Number.isFinite(nextValue) && nextValue > 0;
+      input.classList.toggle("input-error", !isValid);
+      if (!isValid) {
+        setStatus(`Invalid value for ${fieldName}: positive number required.`);
+        return;
+      }
+
+      container[fieldName] = nextValue;
+      state.previewCache.clear();
+      clearOverlayInputErrorState();
+      schedulePreviewRefresh();
+      setStatus(`Updated ${fieldName} for feature${featureIndex + 1}.`);
+    });
+
+    row.append(label, input);
+    featureEditOverlayEl.appendChild(row);
+  });
+}
+
 function renderItemList() {
   const items = getListItems(state.jobState);
   itemListEl.replaceChildren();
@@ -249,6 +376,7 @@ async function setMode(mode) {
     }
     state.jobState = parsed.data;
     renderItemList();
+    renderFeatureEditOverlay();
   } else {
     syncEditorFromState();
   }
@@ -260,7 +388,10 @@ async function setMode(mode) {
   btnModeList.classList.toggle("active", mode === "list");
 
   if (mode === "list") {
+    renderFeatureEditOverlay();
     await loadSelectedPreview();
+  } else {
+    renderFeatureEditOverlay();
   }
 }
 
@@ -282,8 +413,13 @@ function resetEditor() {
   state.jobState = cloneJob(defaultJob);
   state.selectedItemKey = "output";
   state.previewCache.clear();
+  if (state.previewDebounceTimer) {
+    window.clearTimeout(state.previewDebounceTimer);
+    state.previewDebounceTimer = null;
+  }
   syncEditorFromState();
   renderItemList();
+  renderFeatureEditOverlay();
   updateMainViewerLabels(getSelectedItem(), false);
 
   if (state.activeMode === "list") {
@@ -339,6 +475,7 @@ async function runPipeline() {
 async function selectListItem(itemKey) {
   state.selectedItemKey = itemKey;
   renderItemList();
+  renderFeatureEditOverlay();
 
   if (state.activeMode === "list") {
     await loadSelectedPreview();
@@ -365,39 +502,46 @@ async function loadSelectedPreview() {
   const token = ++state.previewRequestToken;
 
   updateMainViewerLabels(item, item.key.startsWith("feature"));
+  clearOverlayInputErrorState();
 
-  let preview = state.previewCache.get(cacheKey);
-  if (!preview) {
-    setStatus(`Generating preview for ${item.label} ...`);
-    const response = await fetch("/pipeline/preview", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ job, stageIndex: item.stageIndex })
-    });
+  try {
+    let preview = state.previewCache.get(cacheKey);
+    if (!preview) {
+      setStatus(`Generating preview for ${item.label} ...`);
+      const response = await fetch("/pipeline/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ job, stageIndex: item.stageIndex })
+      });
 
-    const body = await response.json();
-    if (!response.ok) {
-      const msg = body?.error || body?.detail || `HTTP ${response.status}`;
-      setStatus(`Preview failed: ${msg}`);
+      const body = await response.json();
+      if (!response.ok) {
+        const msg = body?.error || body?.detail || `HTTP ${response.status}`;
+        setStatus(`Preview failed: ${msg}`);
+        markOverlayInputsError();
+        return;
+      }
+
+      preview = body;
+      state.previewCache.set(cacheKey, preview);
+    }
+
+    if (token !== state.previewRequestToken) {
       return;
     }
 
-    preview = body;
-    state.previewCache.set(cacheKey, preview);
+    const shouldShowDelta = item.key.startsWith("feature");
+    await setViewerMeshes(viewerStates.main, {
+      modelUrl: preview.modelStlUrl,
+      deltaUrl: shouldShowDelta ? preview.deltaStlUrl ?? null : null
+    });
+
+    updateMainViewerLabels(item, shouldShowDelta && Boolean(preview.deltaStlUrl));
+    setStatus(`Preview ready: ${item.label}`);
+  } catch (error) {
+    markOverlayInputsError();
+    setStatus(`Preview failed: ${error.message}`);
   }
-
-  if (token !== state.previewRequestToken) {
-    return;
-  }
-
-  const shouldShowDelta = item.key.startsWith("feature");
-  await setViewerMeshes(viewerStates.main, {
-    modelUrl: preview.modelStlUrl,
-    deltaUrl: shouldShowDelta ? preview.deltaStlUrl ?? null : null
-  });
-
-  updateMainViewerLabels(item, shouldShowDelta && Boolean(preview.deltaStlUrl));
-  setStatus(`Preview ready: ${item.label}`);
 }
 
 function createViewer(containerId) {
