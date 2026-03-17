@@ -422,6 +422,7 @@ int ApplyBooleanOp(OcctKernelImpl* impl, int stockId, const TopoDS_Shape& tool,
 
   outResult->resultShapeId = impl->Registry().Add(cut.Shape());
   outResult->deltaShapeId  = impl->Registry().Add(common.Shape());
+  outResult->removalShapeId = impl->Registry().Add(tool);
   outResult->errorCode     = ERROR_OK;
   return ERROR_OK;
 }
@@ -482,7 +483,7 @@ int L1_ApplyMillHole(void* kernel, int stockId,
                      const MillHoleFeatureDto* dto,
                      OperationResult* outResult) {
   if (!kernel || !dto || !outResult) return ERROR_INVALID_ARGUMENT;
-  outResult->resultShapeId = outResult->deltaShapeId = 0;
+  outResult->resultShapeId = outResult->deltaShapeId = outResult->removalShapeId = 0;
   outResult->errorCode = ERROR_INVALID_ARGUMENT;
 
   if (dto->radius <= 0.0 || dto->depth <= 0.0) return ERROR_INVALID_ARGUMENT;
@@ -504,7 +505,7 @@ int L1_ApplyPocketRect(void* kernel, int stockId,
                        const PocketRectFeatureDto* dto,
                        OperationResult* outResult) {
   if (!kernel || !dto || !outResult) return ERROR_INVALID_ARGUMENT;
-  outResult->resultShapeId = outResult->deltaShapeId = 0;
+  outResult->resultShapeId = outResult->deltaShapeId = outResult->removalShapeId = 0;
   outResult->errorCode = ERROR_INVALID_ARGUMENT;
 
   if (dto->width <= 0.0 || dto->height <= 0.0 || dto->depth <= 0.0)
@@ -533,7 +534,7 @@ int L1_ApplyTurnOd(void* kernel, int stockId,
                    const Path2DSegmentDto* segments, int segmentCount, int closed,
                    OperationResult* outResult) {
   if (!kernel || !axis || !segments || !outResult) return ERROR_INVALID_ARGUMENT;
-  outResult->resultShapeId = outResult->deltaShapeId = 0;
+  outResult->resultShapeId = outResult->deltaShapeId = outResult->removalShapeId = 0;
   outResult->errorCode = ERROR_INVALID_ARGUMENT;
 
   try {
@@ -556,7 +557,7 @@ int L1_ApplyTurnId(void* kernel, int stockId,
                    const Path2DSegmentDto* segments, int segmentCount, int closed,
                    OperationResult* outResult) {
   if (!kernel || !axis || !segments || !outResult) return ERROR_INVALID_ARGUMENT;
-  outResult->resultShapeId = outResult->deltaShapeId = 0;
+  outResult->resultShapeId = outResult->deltaShapeId = outResult->removalShapeId = 0;
   outResult->errorCode = ERROR_INVALID_ARGUMENT;
 
   try {
@@ -580,7 +581,7 @@ int L1_ApplyMillContour(void* kernel, int stockId,
                         double depth,
                         OperationResult* outResult) {
   if (!kernel || !axis || !segments || !outResult) return ERROR_INVALID_ARGUMENT;
-  outResult->resultShapeId = outResult->deltaShapeId = 0;
+  outResult->resultShapeId = outResult->deltaShapeId = outResult->removalShapeId = 0;
   outResult->errorCode = ERROR_INVALID_ARGUMENT;
 
   try {

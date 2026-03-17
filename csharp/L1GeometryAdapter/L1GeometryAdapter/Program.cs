@@ -46,6 +46,12 @@ namespace L1GeometryAdapter
                 string stlPath       = Path.Combine(outDir, job.StlFile);
                 string deltaStepPath = Path.Combine(outDir, job.DeltaStepFile);
                 string deltaStlPath  = Path.Combine(outDir, job.DeltaStlFile);
+                string? removalStepPath = string.IsNullOrWhiteSpace(job.RemovalStepFile)
+                    ? null
+                    : Path.Combine(outDir, job.RemovalStepFile);
+                string? removalStlPath = string.IsNullOrWhiteSpace(job.RemovalStlFile)
+                    ? null
+                    : Path.Combine(outDir, job.RemovalStlFile);
 
                 var stepOpt = job.OutputOptions;
                 stepOpt.Format = OutputFormat.Step;
@@ -57,11 +63,19 @@ namespace L1GeometryAdapter
                 kernel.ExportShape(finalResult.ResultShapeId, stlOpt,  stlPath);
                 kernel.ExportShape(finalResult.DeltaShapeId,  stepOpt, deltaStepPath);
                 kernel.ExportShape(finalResult.DeltaShapeId,  stlOpt,  deltaStlPath);
+                if (removalStepPath is not null)
+                    kernel.ExportShape(finalResult.RemovalShapeId, stepOpt, removalStepPath);
+                if (removalStlPath is not null)
+                    kernel.ExportShape(finalResult.RemovalShapeId, stlOpt, removalStlPath);
 
                 Console.WriteLine($"Generated: {stepPath}");
                 Console.WriteLine($"Generated: {stlPath}");
                 Console.WriteLine($"Generated: {deltaStepPath}");
                 Console.WriteLine($"Generated: {deltaStlPath}");
+                if (removalStepPath is not null)
+                    Console.WriteLine($"Generated: {removalStepPath}");
+                if (removalStlPath is not null)
+                    Console.WriteLine($"Generated: {removalStlPath}");
                 return 0;
             }
             catch (Exception ex)

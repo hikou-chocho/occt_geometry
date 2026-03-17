@@ -136,6 +136,8 @@
     "stepFile":      "lathe_result.step",
     "stlFile":       "lathe_result.stl",
     "deltaStepFile": "lathe_delta.step",
-    "deltaStlFile":  "lathe_delta.stl"
+    "deltaStlFile":  "lathe_delta.stl",
+    "removalStepFile": "lathe_removal.step",
+    "removalStlFile":  "lathe_removal.stl"
   }
 }

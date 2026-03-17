@@ -29,6 +29,8 @@ public sealed class JobJsonModel
 			StlFile       = Output.StlFile,
 			DeltaStepFile = Output.DeltaStepFile,
 			DeltaStlFile  = Output.DeltaStlFile,
+			RemovalStepFile = Output.RemovalStepFile,
+			RemovalStlFile  = Output.RemovalStlFile,
 		};
 	}
 }
@@ -304,6 +306,12 @@ public sealed class OutputJsonModel
 	[JsonPropertyAttribute("deltaStlFile")]
 	public string DeltaStlFile { get; set; } = string.Empty;
 
+	[JsonPropertyAttribute("removalStepFile")]
+	public string RemovalStepFile { get; set; } = string.Empty;
+
+	[JsonPropertyAttribute("removalStlFile")]
+	public string RemovalStlFile { get; set; } = string.Empty;
+
 	public OutputOptions ToKernelOptions() => new()
 	{
 		LinearDeflection  = LinearDeflection,
@@ -326,6 +334,8 @@ public sealed class KernelJobModel
 	public string               StlFile       { get; set; } = string.Empty;
 	public string               DeltaStepFile { get; set; } = string.Empty;
 	public string               DeltaStlFile  { get; set; } = string.Empty;
+	public string               RemovalStepFile { get; set; } = string.Empty;
+	public string               RemovalStlFile  { get; set; } = string.Empty;
 }
 
 // ---------------------------------------------------------------------------

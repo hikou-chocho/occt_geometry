@@ -57,6 +57,8 @@
     "stepFile":      "result.step",
     "stlFile":       "result.stl",
     "deltaStepFile": "delta.step",
-    "deltaStlFile":  "delta.stl"
+    "deltaStlFile":  "delta.stl",
+    "removalStepFile": "removal.step",
+    "removalStlFile":  "removal.stl"
   }
 }

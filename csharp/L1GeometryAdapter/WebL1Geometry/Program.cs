@@ -59,11 +59,17 @@ app.MapPost("/pipeline/run", (JobJsonModel request) =>
 		var stlFile = SanitizeFileName(job.StlFile, "result.stl");
 		var deltaStepFile = SanitizeFileName(job.DeltaStepFile, "delta.step");
 		var deltaStlFile = SanitizeFileName(job.DeltaStlFile, "delta.stl");
+		var hasRemovalStep = !string.IsNullOrWhiteSpace(job.RemovalStepFile);
+		var hasRemovalStl = !string.IsNullOrWhiteSpace(job.RemovalStlFile);
+		var removalStepFile = hasRemovalStep ? SanitizeFileName(job.RemovalStepFile, "removal.step") : null;
+		var removalStlFile = hasRemovalStl ? SanitizeFileName(job.RemovalStlFile, "removal.stl") : null;
 
 		var stepPath = Path.Combine(runDir, stepFile);
 		var stlPath = Path.Combine(runDir, stlFile);
 		var deltaStepPath = Path.Combine(runDir, deltaStepFile);
 		var deltaStlPath = Path.Combine(runDir, deltaStlFile);
+		var removalStepPath = removalStepFile is null ? null : Path.Combine(runDir, removalStepFile);
+		var removalStlPath = removalStlFile is null ? null : Path.Combine(runDir, removalStlFile);
 
 		using var kernel = new L1Kernel();
 
@@ -88,6 +94,10 @@ app.MapPost("/pipeline/run", (JobJsonModel request) =>
 		kernel.ExportShape(finalResult.ResultShapeId, stlOpt, stlPath);
 		kernel.ExportShape(finalResult.DeltaShapeId, stepOpt, deltaStepPath);
 		kernel.ExportShape(finalResult.DeltaShapeId, stlOpt, deltaStlPath);
+		if (removalStepPath is not null)
+			kernel.ExportShape(finalResult.RemovalShapeId, stepOpt, removalStepPath);
+		if (removalStlPath is not null)
+			kernel.ExportShape(finalResult.RemovalShapeId, stlOpt, removalStlPath);
 
 		return Results.Ok(new PipelineRunResponse
 		{
@@ -96,6 +106,8 @@ app.MapPost("/pipeline/run", (JobJsonModel request) =>
 			FinalStlUrl = $"/pipeline/final-stl/{runId}/{stlFile}",
 			DeltaStepUrl = $"/output/{runId}/{deltaStepFile}",
 			DeltaStlUrl = $"/output/{runId}/{deltaStlFile}",
+			RemovalStepUrl = removalStepFile is null ? null : $"/output/{runId}/{removalStepFile}",
+			RemovalStlUrl = removalStlFile is null ? null : $"/output/{runId}/{removalStlFile}",
 		});
 	}
 	catch (InvalidOperationException ex)
@@ -118,8 +130,10 @@ app.MapPost("/pipeline/preview", (PreviewStageRequest request) =>
 
 		var modelFile = "model.stl";
 		var deltaFile = "delta.stl";
+		var removalFile = "removal.stl";
 		var modelPath = Path.Combine(previewDir, modelFile);
 		var deltaPath = Path.Combine(previewDir, deltaFile);
+		var removalPath = Path.Combine(previewDir, removalFile);
 
 		var stlOpt = CreateStlOutputOptions(request.Job.Output);
 
@@ -155,10 +169,13 @@ app.MapPost("/pipeline/preview", (PreviewStageRequest request) =>
 		kernel.ExportShape(resultShapeId, stlOpt, modelPath);
 
 		string? deltaUrl = null;
+		string? removalUrl = null;
 		if (stageIndex < featureCount)
 		{
 			kernel.ExportShape(lastResult.DeltaShapeId, stlOpt, deltaPath);
+			kernel.ExportShape(lastResult.RemovalShapeId, stlOpt, removalPath);
 			deltaUrl = $"/output/preview/{previewId}/{deltaFile}";
+			removalUrl = $"/output/preview/{previewId}/{removalFile}";
 		}
 
 		CleanupOldReferenceDirectories(previewRoot, TimeSpan.FromMinutes(10));
@@ -168,6 +185,7 @@ app.MapPost("/pipeline/preview", (PreviewStageRequest request) =>
 			StageIndex = stageIndex,
 			ModelStlUrl = $"/output/preview/{previewId}/{modelFile}",
 			DeltaStlUrl = deltaUrl,
+			RemovalStlUrl = removalUrl,
 		});
 	}
 	catch (InvalidOperationException ex)
@@ -350,6 +368,8 @@ sealed class PipelineRunResponse
 	public string FinalStlUrl { get; set; } = string.Empty;
 	public string DeltaStepUrl { get; set; } = string.Empty;
 	public string DeltaStlUrl { get; set; } = string.Empty;
+	public string? RemovalStepUrl { get; set; }
+	public string? RemovalStlUrl { get; set; }
 }
 
 sealed class PreviewStageRequest
@@ -363,6 +383,7 @@ sealed class PreviewStageResponse
 	public int StageIndex { get; set; }
 	public string ModelStlUrl { get; set; } = string.Empty;
 	public string? DeltaStlUrl { get; set; }
+	public string? RemovalStlUrl { get; set; }
 }
 
 sealed class ReferenceStepResponse

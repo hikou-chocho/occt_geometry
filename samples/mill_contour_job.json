@@ -87,6 +87,8 @@
     "stepFile": "mill_contour_arc_result.step",
     "stlFile": "mill_contour_arc_result.stl",
     "deltaStepFile": "mill_contour_arc_delta.step",
-    "deltaStlFile": "mill_contour_arc_delta.stl"
+    "deltaStlFile": "mill_contour_arc_delta.stl",
+    "removalStepFile": "mill_contour_arc_removal.step",
+    "removalStlFile": "mill_contour_arc_removal.stl"
   }
 }

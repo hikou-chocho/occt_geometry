@@ -74,6 +74,7 @@ typedef struct Path2DSegmentDto {
 typedef struct OperationResult {
   int resultShapeId;
   int deltaShapeId;
+  int removalShapeId;
   int errorCode;
 } OperationResult;
 

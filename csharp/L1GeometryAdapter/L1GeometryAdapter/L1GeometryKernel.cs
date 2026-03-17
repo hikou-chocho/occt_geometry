@@ -96,6 +96,7 @@ namespace L1GeometryAdapter
     {
         public int ResultShapeId;
         public int DeltaShapeId;
+        public int RemovalShapeId;
         public int ErrorCode;
     }
 
@@ -302,8 +303,15 @@ namespace L1GeometryAdapter
 
         private void TrackResult(OperationResult result)
         {
-            _trackedShapes.Push(result.ResultShapeId);
-            _trackedShapes.Push(result.DeltaShapeId);
+            TrackShape(result.ResultShapeId);
+            TrackShape(result.DeltaShapeId);
+            TrackShape(result.RemovalShapeId);
+        }
+
+        private void TrackShape(int shapeId)
+        {
+            if (shapeId != 0)
+                _trackedShapes.Push(shapeId);
         }
 
         private void ThrowIfDisposed()

@@ -9,7 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <NativeDlls Include="$(MSBuildProjectDirectory)\..\..\..\out\build\x64-$(Configuration)\*.dll" />
+    <NativeDlls Include="$(MSBuildProjectDirectory)\..\..\..\build\$(Configuration)\*.dll" />
   </ItemGroup>
 
   <Target Name="CopyNativeDlls" AfterTargets="Build">

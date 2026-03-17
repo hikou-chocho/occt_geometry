@@ -13,6 +13,17 @@
 
 ---
 
+## 16. Removal Export 追補
+
+- `OperationResult` は `resultShapeId` / `deltaShapeId` / `removalShapeId` / `errorCode` を持つ。
+- `deltaShapeId` は従来通り `Common(Stock, Tool)` を表す。
+- `removalShapeId` は Boolean に使った Tool 全体形状を表す。
+- `L1_Apply*` 系 API は Result / Delta / Removal の 3 つの ShapeId を返す。
+- JSON 出力設定は従来の `stepFile` / `stlFile` / `deltaStepFile` / `deltaStlFile` に加えて、
+  `removalStepFile` / `removalStlFile` を受け付ける。
+- `removalStepFile` / `removalStlFile` は任意項目とし、未指定時は removal export を行わない。
+- export 対象は従来通り最後に適用した feature の結果とする。
+
 ## 2. 適用範囲（Phase1）
 | 項目 | 対応 |
 |---|---|

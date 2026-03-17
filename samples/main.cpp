@@ -43,6 +43,8 @@ struct SampleCase {
   std::string        stlFileName;
   std::string        deltaStepFileName;
   std::string        deltaStlFileName;
+  std::string        removalStepFileName;
+  std::string        removalStlFileName;
 };
 
 constexpr int kMaxSegments = 128;
@@ -341,6 +343,10 @@ SampleCase LoadCaseFile(const std::filesystem::path& filePath) {
   sample.stlFileName     = Require(kv, "output.stlFile");
   sample.deltaStepFileName = Require(kv, "output.deltaStepFile");
   sample.deltaStlFileName  = Require(kv, "output.deltaStlFile");
+  if (const std::string* removalStepFile = Find(kv, "output.removalStepFile"))
+    sample.removalStepFileName = *removalStepFile;
+  if (const std::string* removalStlFile = Find(kv, "output.removalStlFile"))
+    sample.removalStlFileName = *removalStlFile;
 
   return sample;
 }
@@ -436,10 +442,19 @@ int main(int argc, char* argv[]) {
   const std::string stlPath       = (outDir / sample.stlFileName).string();
   const std::string deltaStepPath = (outDir / sample.deltaStepFileName).string();
   const std::string deltaStlPath  = (outDir / sample.deltaStlFileName).string();
+  const bool hasRemovalStepPath   = !sample.removalStepFileName.empty();
+  const bool hasRemovalStlPath    = !sample.removalStlFileName.empty();
+  const std::string removalStepPath = hasRemovalStepPath
+      ? (outDir / sample.removalStepFileName).string()
+      : std::string();
+  const std::string removalStlPath = hasRemovalStlPath
+      ? (outDir / sample.removalStlFileName).string()
+      : std::string();
 
   const auto exportStart = Clock::now();
 
   auto cleanup = [&]() {
+    L1_DeleteShape(kernel, result.removalShapeId);
     L1_DeleteShape(kernel, result.deltaShapeId);
     L1_DeleteShape(kernel, result.resultShapeId);
     L1_DeleteShape(kernel, stockId);
@@ -450,6 +465,10 @@ int main(int argc, char* argv[]) {
   if (!Check(L1_ExportShape(kernel, result.resultShapeId, &stlOpt,  stlPath.c_str()),       "L1_ExportShape(STL)"))       { cleanup(); return 1; }
   if (!Check(L1_ExportShape(kernel, result.deltaShapeId,  &stepOpt, deltaStepPath.c_str()), "L1_ExportShape(DELTA STEP)")) { cleanup(); return 1; }
   if (!Check(L1_ExportShape(kernel, result.deltaShapeId,  &stlOpt,  deltaStlPath.c_str()),  "L1_ExportShape(DELTA STL)"))  { cleanup(); return 1; }
+  if (hasRemovalStepPath &&
+      !Check(L1_ExportShape(kernel, result.removalShapeId, &stepOpt, removalStepPath.c_str()), "L1_ExportShape(REMOVAL STEP)")) { cleanup(); return 1; }
+  if (hasRemovalStlPath &&
+      !Check(L1_ExportShape(kernel, result.removalShapeId, &stlOpt, removalStlPath.c_str()), "L1_ExportShape(REMOVAL STL)")) { cleanup(); return 1; }
 
   const auto exportEnd = Clock::now();
 
@@ -459,6 +478,10 @@ int main(int argc, char* argv[]) {
             << "Generated: " << stlPath       << "\n"
             << "Generated: " << deltaStepPath << "\n"
             << "Generated: " << deltaStlPath  << "\n";
+  if (hasRemovalStepPath)
+    std::cout << "Generated: " << removalStepPath << "\n";
+  if (hasRemovalStlPath)
+    std::cout << "Generated: " << removalStlPath << "\n";
 
   std::cout << std::fixed << std::setprecision(3)
             << "Timing(ms): LoadCaseFile=" << ElapsedMs(loadStart, loadEnd)
