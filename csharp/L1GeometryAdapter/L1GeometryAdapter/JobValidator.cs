@@ -8,6 +8,9 @@ public static class JobValidator
 	{
 		var errors = new List<ValidationError>();
 
+		if (string.IsNullOrWhiteSpace(job.Meta?.SessionId))
+			errors.Add(Error("EMPTY_SESSION_ID", "meta.sessionId", "meta.sessionId must not be empty."));
+
 		// Rule 1: features.length >= 1
 		if (job.Features.Count < 1)
 			errors.Add(Error("FEATURES_EMPTY", "features", "features must contain at least one item."));

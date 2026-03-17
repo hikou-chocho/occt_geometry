@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MCP Job Preview</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0d1117;
+      --panel: #141b24;
+      --panel-border: #293241;
+      --text: #e5ecf4;
+      --muted: #91a3b5;
+      --accent: #7bdff2;
+      --accent-soft: rgba(123, 223, 242, 0.15);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      background:
+        radial-gradient(circle at top, rgba(123, 223, 242, 0.08), transparent 28%),
+        linear-gradient(180deg, #0b0f15, var(--bg));
+      color: var(--text);
+      font-family: "Segoe UI", sans-serif;
+    }
+
+    aside {
+      border-right: 1px solid var(--panel-border);
+      background: rgba(20, 27, 36, 0.92);
+      backdrop-filter: blur(8px);
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    main {
+      min-width: 0;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .panel-block {
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--panel-border);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 18px;
+      letter-spacing: 0.04em;
+    }
+
+    .muted {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    button {
+      border: 1px solid var(--panel-border);
+      background: #1b2531;
+      color: var(--text);
+      padding: 8px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+
+    button:hover {
+      border-color: var(--accent);
+    }
+
+    #stageList {
+      list-style: none;
+      margin: 0;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      overflow: auto;
+    }
+
+    .stageButton {
+      width: 100%;
+      border-radius: 10px;
+      text-align: left;
+      padding: 10px 12px;
+      background: #121a24;
+    }
+
+    .stageButton.active {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+    }
+
+    .stageLabel {
+      display: block;
+      font-size: 14px;
+      color: var(--text);
+    }
+
+    .stageDetail {
+      display: block;
+      margin-top: 4px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    #viewerHeader {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--panel-border);
+      background: rgba(13, 17, 23, 0.84);
+    }
+
+    #viewerTitle {
+      font-size: 16px;
+    }
+
+    #viewerSubtitle {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 4px;
+    }
+
+    #status {
+      padding: 10px 18px;
+      border-bottom: 1px solid var(--panel-border);
+      color: var(--muted);
+      font-size: 12px;
+      min-height: 38px;
+      white-space: pre-wrap;
+    }
+
+    #viewer {
+      flex: 1;
+      min-height: 0;
+    }
+
+    @media (max-width: 900px) {
+      body {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto 1fr;
+      }
+
+      aside {
+        border-right: 0;
+        border-bottom: 1px solid var(--panel-border);
+      }
+
+      #stageList {
+        max-height: 220px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <aside>
+    <section class="panel-block">
+      <h1>MCP Preview</h1>
+      <div class="muted" id="sessionSummary">Loading preview session...</div>
+      <div class="toolbar">
+        <button id="btnRefresh" type="button">Refresh</button>
+      </div>
+    </section>
+    <ul id="stageList"></ul>
+  </aside>
+  <main>
+    <section id="viewerHeader">
+      <div>
+        <div id="viewerTitle">Preview</div>
+        <div id="viewerSubtitle">Waiting for session data</div>
+      </div>
+    </section>
+    <div id="status"></div>
+    <section id="viewer"></section>
+  </main>
+  <script type="module" src="/mcp-preview.js"></script>
+</body>
+</html>

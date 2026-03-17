@@ -90,5 +90,8 @@
     "deltaStlFile": "mill_contour_arc_delta.stl",
     "removalStepFile": "mill_contour_arc_removal.step",
     "removalStlFile": "mill_contour_arc_removal.stl"
+  },
+  "meta": {
+    "sessionId": "sess-sample-mill-contour"
   }
 }

@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Net.Http.Json;
 using System.Text.Json;
 using L1GeometryAdapter;
 using ModelContextProtocol.Server;
@@ -9,6 +10,8 @@ namespace McpJobBuilder;
 internal static class JobTools
 {
 	private static readonly JsonSerializerOptions CompactOptions = new() { WriteIndented = false };
+	private static readonly HttpClient HttpClient = new();
+	private const string DefaultWebBaseUrl = "http://localhost:5159";
 
 	// ---------------------------------------------------------------
 	// job_create
@@ -20,12 +23,12 @@ internal static class JobTools
 	internal static string JobCreate(
 		[Description("Optional initial values for stock and output.")] JobDefaults? defaults = null)
 	{
-		var job = new JobJsonModel
+		var job = JobJsonDefaults.CreateEmptyJob(new JobDefaultsOptions
 		{
-			Stock = defaults?.Stock ?? new StockJsonModel(),
-			Features = new List<FeatureJsonModel>(),
-			Output = defaults?.Output ?? new OutputJsonModel(),
-		};
+			Stock = defaults?.Stock,
+			Output = defaults?.Output,
+			SessionId = defaults?.SessionId,
+		});
 
 		return JsonSerializer.Serialize(new JobOnlyResponse(job), CompactOptions);
 	}
@@ -95,5 +98,58 @@ internal static class JobTools
 			: new ValidateResponse(Ok: false, Errors: errors);
 
 		return JsonSerializer.Serialize(response, CompactOptions);
+	}
+
+	[McpServerTool(Name = "job_preview_web"), Description(
+		"Sends the full job to the local Web preview bridge and returns the preview URL. " +
+		"Web is display-only; the job remains authoritative in VSCode.")]
+	internal static async Task<string> JobPreviewWeb(
+		[Description("The full job to preview.")] JobJsonModel job,
+		[Description("Optional Web base URL. Defaults to L1GEOMETRY_WEB_BASE_URL or http://localhost:5159.")]
+		string? webBaseUrl = null)
+	{
+		var baseUrl = ResolveWebBaseUrl(webBaseUrl);
+		var request = new PreviewBridgeRequest { Job = job };
+
+		HttpResponseMessage response;
+		try
+		{
+			response = await HttpClient.PostAsJsonAsync($"{baseUrl}/preview-api/session", request);
+		}
+		catch (Exception ex)
+		{
+			throw new InvalidOperationException($"Failed to reach preview Web app at {baseUrl}: {ex.Message}", ex);
+		}
+
+		PreviewBridgeResponse? previewResponse = null;
+		string? errorBody = null;
+		try
+		{
+			previewResponse = await response.Content.ReadFromJsonAsync<PreviewBridgeResponse>();
+		}
+		catch
+		{
+			errorBody = await response.Content.ReadAsStringAsync();
+		}
+
+		if (!response.IsSuccessStatusCode || previewResponse is null)
+		{
+			var detail = previewResponse?.Error;
+			if (string.IsNullOrWhiteSpace(detail))
+				detail = string.IsNullOrWhiteSpace(errorBody) ? $"HTTP {(int)response.StatusCode}" : errorBody;
+			throw new InvalidOperationException($"Preview bridge request failed: {detail}");
+		}
+
+		return JsonSerializer.Serialize(previewResponse, CompactOptions);
+	}
+
+	private static string ResolveWebBaseUrl(string? webBaseUrl)
+	{
+		var candidate = string.IsNullOrWhiteSpace(webBaseUrl)
+			? Environment.GetEnvironmentVariable("L1GEOMETRY_WEB_BASE_URL")
+			: webBaseUrl;
+
+		candidate = string.IsNullOrWhiteSpace(candidate) ? DefaultWebBaseUrl : candidate.Trim();
+		return candidate.TrimEnd('/');
 	}
 }

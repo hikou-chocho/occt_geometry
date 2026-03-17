@@ -60,5 +60,8 @@
     "deltaStlFile":  "delta.stl",
     "removalStepFile": "removal.step",
     "removalStlFile":  "removal.stl"
+  },
+  "meta": {
+    "sessionId": "sess-sample-machining"
   }
 }

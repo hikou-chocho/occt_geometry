@@ -139,5 +139,8 @@
     "deltaStlFile":  "lathe_delta.stl",
     "removalStepFile": "lathe_removal.step",
     "removalStlFile":  "lathe_removal.stl"
+  },
+  "meta": {
+    "sessionId": "sess-sample-lathe"
   }
 }

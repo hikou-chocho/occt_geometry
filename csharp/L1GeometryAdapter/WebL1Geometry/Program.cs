@@ -12,6 +12,7 @@ Directory.CreateDirectory(previewRoot);
 app.UseDefaultFiles();
 app.UseStaticFiles();
 app.MapJobApi();
+app.MapPreviewBridgeApi();
 
 app.UseStaticFiles(new StaticFileOptions
 {

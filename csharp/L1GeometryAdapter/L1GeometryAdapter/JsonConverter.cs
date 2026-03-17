@@ -14,6 +14,9 @@ public sealed class JobJsonModel
 	[JsonPropertyAttribute("output")]
 	public OutputJsonModel Output { get; set; } = new();
 
+	[JsonPropertyAttribute("meta")]
+	public MetaJsonModel Meta { get; set; } = new();
+
 	public KernelJobModel ToKernel()
 	{
 		if (Features.Count == 0)
@@ -318,6 +321,12 @@ public sealed class OutputJsonModel
 		AngularDeflection = AngularDeflection,
 		Parallel          = Parallel,
 	};
+}
+
+public sealed class MetaJsonModel
+{
+	[JsonPropertyAttribute("sessionId")]
+	public string SessionId { get; set; } = string.Empty;
 }
 
 // ---------------------------------------------------------------------------

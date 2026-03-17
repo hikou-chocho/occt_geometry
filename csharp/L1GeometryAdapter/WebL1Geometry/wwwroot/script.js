@@ -62,6 +62,9 @@ const defaultJob = {
     stlFile: "result.stl",
     deltaStepFile: "delta.step",
     deltaStlFile: "delta.stl"
+  },
+  meta: {
+    sessionId: "sess-browser-script"
   }
 };
 

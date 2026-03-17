@@ -41,6 +41,9 @@ internal sealed class JobDefaults
 
 	[JsonPropertyName("output")]
 	public OutputJsonModel? Output { get; init; }
+
+	[JsonPropertyName("sessionId")]
+	public string? SessionId { get; init; }
 }
 
 internal sealed class SetStockRequest
@@ -128,12 +131,12 @@ internal static class JobApiExtensions
 	{
 		app.MapPost("/job/create", (CreateRequest? request) =>
 		{
-			var job = new JobJsonModel
+			var job = JobJsonDefaults.CreateEmptyJob(new JobDefaultsOptions
 			{
-				Stock = request?.Defaults?.Stock ?? new StockJsonModel(),
-				Features = new List<FeatureJsonModel>(),
-				Output = request?.Defaults?.Output ?? new OutputJsonModel(),
-			};
+				Stock = request?.Defaults?.Stock,
+				Output = request?.Defaults?.Output,
+				SessionId = request?.Defaults?.SessionId,
+			});
 
 			return Results.Ok(new JobApiResponse { Ok = true, Job = job });
 		});

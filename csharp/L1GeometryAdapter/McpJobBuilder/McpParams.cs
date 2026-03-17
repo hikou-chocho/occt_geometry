@@ -13,4 +13,7 @@ internal sealed class JobDefaults
 
 	[JsonPropertyName("output")]
 	public OutputJsonModel? Output { get; init; }
+
+	[JsonPropertyName("sessionId")]
+	public string? SessionId { get; init; }
 }
