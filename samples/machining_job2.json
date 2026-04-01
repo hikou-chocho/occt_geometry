@@ -1,0 +1,67 @@
+{
+  "stock": {
+    "type": "BOX",
+    "p1": 100,
+    "p2": 110,
+    "p3": 50,
+    "axis": {
+      "origin": [
+        0,
+        0,
+        0
+      ],
+      "dir": [
+        0,
+        0,
+        1
+      ],
+      "xdir": [
+        1,
+        0,
+        0
+      ]
+    }
+  },
+  "features": [
+    {
+      "type": "POCKET_RECT",
+      "pocketRect": {
+        "width": 30,
+        "height": 30,
+        "depth": 5,
+        "axis": {
+          "origin": [
+            50,
+            55,
+            50
+          ],
+          "dir": [
+            0,
+            0,
+            -1
+          ],
+          "xdir": [
+            1,
+            0,
+            0
+          ]
+        }
+      }
+    }
+  ],
+  "output": {
+    "linearDeflection": 0.1,
+    "angularDeflection": 0.5,
+    "parallel": 1,
+    "dir": "out",
+    "stepFile": "sess-20260401-171806-778d_result.step",
+    "stlFile": "sess-20260401-171806-778d_result.stl",
+    "deltaStepFile": "sess-20260401-171806-778d_delta.step",
+    "deltaStlFile": "sess-20260401-171806-778d_delta.stl",
+    "removalStepFile": "sess-20260401-171806-778d_removal.step",
+    "removalStlFile": "sess-20260401-171806-778d_removal.stl"
+  },
+  "meta": {
+    "sessionId": "sess-20260401-171806-778d"
+  }
+}
