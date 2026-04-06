@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { STLLoader } from "three/addons/loaders/STLLoader.js";
+import { attachCameraAxisOverlay, updateCameraAxisOverlay } from "./camera-axis-overlay.js";
 
 const stageListEl = document.getElementById("stageList");
 const statusEl = document.getElementById("status");
@@ -238,6 +239,8 @@ function createViewer(containerId) {
   const meshGroup = new THREE.Group();
   scene.add(meshGroup);
 
+  const axisOverlay = attachCameraAxisOverlay(container, "viewer.camera.axis");
+
   resizeViewer({ container, camera, renderer });
 
   return {
@@ -246,7 +249,8 @@ function createViewer(containerId) {
     camera,
     renderer,
     controls,
-    meshGroup
+    meshGroup,
+    axisOverlay
   };
 }
 
@@ -266,6 +270,7 @@ function animate() {
   requestAnimationFrame(animate);
   viewerState.controls.update();
   viewerState.renderer.render(viewerState.scene, viewerState.camera);
+  updateCameraAxisOverlay(viewerState.axisOverlay, viewerState.camera, "viewer.camera.axis");
 }
 
 function clearViewerMeshes(currentViewerState) {
