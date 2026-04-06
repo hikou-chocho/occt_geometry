@@ -79,6 +79,8 @@ const btnFormat = document.getElementById("btnFormat");
 const btnRun = document.getElementById("btnRun");
 const btnReset = document.getElementById("btnReset");
 const btnToggleCompare = document.getElementById("btnToggleCompare");
+const btnOverlayDelta = document.getElementById("btnOverlayDelta");
+const btnOverlayRemoval = document.getElementById("btnOverlayRemoval");
 const viewerLayout = document.getElementById("viewerLayout");
 const referenceDropZone = document.getElementById("referenceDropZone");
 const referenceFileInput = document.getElementById("referenceFileInput");
@@ -101,6 +103,8 @@ btnFormat.addEventListener("click", formatJson);
 btnRun.addEventListener("click", runPipeline);
 btnReset.addEventListener("click", resetEditor);
 btnToggleCompare.addEventListener("click", toggleCompareViewer);
+btnOverlayDelta?.addEventListener("click", () => void setOverlayMode("delta"));
+btnOverlayRemoval?.addEventListener("click", () => void setOverlayMode("removal"));
 
 const worldAxesSize = 120;
 const viewerStates = {
@@ -112,6 +116,7 @@ const state = {
   activeMode: "json",
   jobState: cloneJob(defaultJob),
   selectedItemKey: "output",
+  overlayMode: "delta",
   previewCache: new Map(),
   previewRequestToken: 0,
   previewDebounceTimer: null
@@ -137,7 +142,12 @@ function ensureHeaderLine(id, className, fallbackText) {
 function createHeaderTextWrapper() {
   const wrapper = document.createElement("div");
   wrapper.className = "viewerPaneHeaderText";
-  mainPaneHeader.replaceChildren(wrapper);
+  const toggle = mainPaneHeader.querySelector(".overlayToggle");
+  if (toggle) {
+    mainPaneHeader.insertBefore(wrapper, toggle);
+  } else {
+    mainPaneHeader.replaceChildren(wrapper);
+  }
   return wrapper;
 }
 
@@ -168,6 +178,49 @@ function cloneJob(job) {
 function setStatus(message) {
   const timestamp = new Date().toLocaleTimeString();
   statusEl.textContent = `[${timestamp}] ${message}`;
+}
+
+function isFeatureItem(item) {
+  return item?.key?.startsWith("feature") ?? false;
+}
+
+function canUseMainOverlayToggle(item = getSelectedItem()) {
+  return state.activeMode === "list" && isFeatureItem(item);
+}
+
+function getOverlayUrl(preview, item) {
+  if (!isFeatureItem(item)) {
+    return null;
+  }
+
+  return state.overlayMode === "removal"
+    ? preview.removalStlUrl ?? null
+    : preview.deltaStlUrl ?? null;
+}
+
+function refreshMainOverlayToggle(item = getSelectedItem()) {
+  const enabled = canUseMainOverlayToggle(item);
+  if (btnOverlayDelta) {
+    btnOverlayDelta.disabled = !enabled;
+    btnOverlayDelta.classList.toggle("active", state.overlayMode === "delta");
+  }
+  if (btnOverlayRemoval) {
+    btnOverlayRemoval.disabled = !enabled;
+    btnOverlayRemoval.classList.toggle("active", state.overlayMode === "removal");
+  }
+}
+
+async function setOverlayMode(mode) {
+  if (mode !== "delta" && mode !== "removal") {
+    return;
+  }
+
+  state.overlayMode = mode;
+  refreshMainOverlayToggle();
+
+  if (state.activeMode === "list") {
+    await loadSelectedPreview();
+  }
 }
 
 function getEditorJson() {
@@ -389,6 +442,7 @@ async function setMode(mode) {
   listViewEl.classList.toggle("active", mode === "list");
   btnModeJson.classList.toggle("active", mode === "json");
   btnModeList.classList.toggle("active", mode === "list");
+  refreshMainOverlayToggle();
 
   if (mode === "list") {
     renderFeatureEditOverlay();
@@ -415,6 +469,7 @@ function formatJson() {
 function resetEditor() {
   state.jobState = cloneJob(defaultJob);
   state.selectedItemKey = "output";
+  state.overlayMode = "delta";
   state.previewCache.clear();
   if (state.previewDebounceTimer) {
     window.clearTimeout(state.previewDebounceTimer);
@@ -424,6 +479,7 @@ function resetEditor() {
   renderItemList();
   renderFeatureEditOverlay();
   updateMainViewerLabels(getSelectedItem(), false);
+  refreshMainOverlayToggle();
 
   if (state.activeMode === "list") {
     void loadSelectedPreview();
@@ -468,7 +524,8 @@ async function runPipeline() {
     }
 
     updateMainViewerLabels({ label: "output", detail: "Run result" }, false);
-    await setViewerMeshes(viewerStates.main, { modelUrl: body.finalStlUrl, deltaUrl: null });
+    refreshMainOverlayToggle({ key: "output", label: "output" });
+    await setViewerMeshes(viewerStates.main, { modelUrl: body.finalStlUrl, overlayUrl: null });
     setStatus(`Run finished: ${body.finalStlUrl}`);
   } catch (error) {
     setStatus(`Runtime error: ${error.message}`);
@@ -479,13 +536,14 @@ async function selectListItem(itemKey) {
   state.selectedItemKey = itemKey;
   renderItemList();
   renderFeatureEditOverlay();
+  refreshMainOverlayToggle();
 
   if (state.activeMode === "list") {
     await loadSelectedPreview();
   }
 }
 
-function updateMainViewerLabels(item, hasDelta) {
+function updateMainViewerLabels(item, hasOverlay) {
   const label = item?.label ?? "preview";
   mainViewerTitle.textContent = `Preview: ${label}`;
 
@@ -494,7 +552,7 @@ function updateMainViewerLabels(item, hasDelta) {
   } else if (label === "output") {
     mainViewerSubtitle.textContent = "Final model";
   } else {
-    mainViewerSubtitle.textContent = hasDelta ? `${item.detail} with removal delta` : item.detail;
+    mainViewerSubtitle.textContent = hasOverlay ? `${item.detail} with ${state.overlayMode}` : item.detail;
   }
 }
 
@@ -504,7 +562,8 @@ async function loadSelectedPreview() {
   const cacheKey = cacheKeyForStage(job, item.stageIndex);
   const token = ++state.previewRequestToken;
 
-  updateMainViewerLabels(item, item.key.startsWith("feature"));
+  refreshMainOverlayToggle(item);
+  updateMainViewerLabels(item, false);
   clearOverlayInputErrorState();
 
   try {
@@ -533,13 +592,14 @@ async function loadSelectedPreview() {
       return;
     }
 
-    const shouldShowDelta = item.key.startsWith("feature");
+    const overlayUrl = canUseMainOverlayToggle(item) ? getOverlayUrl(preview, item) : null;
     await setViewerMeshes(viewerStates.main, {
       modelUrl: preview.modelStlUrl,
-      deltaUrl: shouldShowDelta ? preview.deltaStlUrl ?? null : null
+      overlayUrl,
+      overlayMode: state.overlayMode
     });
 
-    updateMainViewerLabels(item, shouldShowDelta && Boolean(preview.deltaStlUrl));
+    updateMainViewerLabels(item, Boolean(overlayUrl));
     setStatus(`Preview ready: ${item.label}`);
   } catch (error) {
     markOverlayInputsError();
@@ -678,7 +738,7 @@ function fitViewerToGroup(viewerState) {
   viewerState.controls.update();
 }
 
-async function setViewerMeshes(viewerState, { modelUrl, deltaUrl }) {
+async function setViewerMeshes(viewerState, { modelUrl, overlayUrl, overlayMode = "delta" }) {
   if (!viewerState) {
     throw new Error("Viewer is not initialized.");
   }
@@ -688,15 +748,15 @@ async function setViewerMeshes(viewerState, { modelUrl, deltaUrl }) {
     const modelBlobUrl = await fetchStlBlobUrl(modelUrl);
     objectUrls.push(modelBlobUrl);
 
-    let deltaBlobUrl = null;
-    if (deltaUrl) {
-      deltaBlobUrl = await fetchStlBlobUrl(deltaUrl);
-      objectUrls.push(deltaBlobUrl);
+    let overlayBlobUrl = null;
+    if (overlayUrl) {
+      overlayBlobUrl = await fetchStlBlobUrl(overlayUrl);
+      objectUrls.push(overlayBlobUrl);
     }
 
     const modelMaterial = new THREE.MeshPhongMaterial({ color: 0xcccccc });
-    const deltaMaterial = new THREE.MeshPhongMaterial({
-      color: 0x7fcfff,
+    const overlayMaterial = new THREE.MeshPhongMaterial({
+      color: overlayMode === "removal" ? 0xffb366 : 0x7fcfff,
       transparent: true,
       opacity: 0.45,
       depthWrite: false,
@@ -706,8 +766,8 @@ async function setViewerMeshes(viewerState, { modelUrl, deltaUrl }) {
     });
 
     const meshPromises = [loadMesh(modelBlobUrl, modelMaterial)];
-    if (deltaBlobUrl) {
-      meshPromises.push(loadMesh(deltaBlobUrl, deltaMaterial));
+    if (overlayBlobUrl) {
+      meshPromises.push(loadMesh(overlayBlobUrl, overlayMaterial));
     }
 
     const meshes = await Promise.all(meshPromises);
@@ -841,7 +901,7 @@ async function importReferenceStep(file) {
       return;
     }
 
-    await setViewerMeshes(viewerStates.reference, { modelUrl: body.referenceStlUrl, deltaUrl: null });
+    await setViewerMeshes(viewerStates.reference, { modelUrl: body.referenceStlUrl, overlayUrl: null });
     setStatus("Reference STEP loaded.");
   } catch (error) {
     setStatus(`Reference import error: ${error.message}`);

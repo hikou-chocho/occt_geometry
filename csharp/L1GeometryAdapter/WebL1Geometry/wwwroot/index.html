@@ -167,6 +167,10 @@
       border-bottom: 1px solid #2a2a2a;
     }
 
+    .viewerPaneHeader > span {
+      display: none;
+    }
+
     .viewerPaneHeaderText {
       display: flex;
       flex-direction: column;
@@ -181,6 +185,42 @@
     .viewerPaneHeaderSub {
       font-size: 11px;
       color: #9fcaef;
+    }
+
+    .overlayToggle {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .overlayToggleLabel {
+      font-size: 11px;
+      color: #9fcaef;
+    }
+
+    .overlayToggleButton {
+      min-width: 72px;
+      padding: 5px 10px;
+      font-size: 12px;
+      border-radius: 999px;
+      border: 1px solid #4a607a;
+      background: #16212d;
+      color: #dbe8f7;
+    }
+
+    .overlayToggleButton.active {
+      background: #dbe9ff;
+      border-color: #5b84c4;
+      color: #17324f;
+    }
+
+    .overlayToggleButton:disabled {
+      cursor: default;
+      opacity: 0.45;
+      border-color: #3a4756;
+      background: #18202a;
+      color: #91a0af;
     }
 
     #viewer,
@@ -296,7 +336,7 @@
         <textarea id="editor" spellcheck="false"></textarea>
       </section>
       <section id="listView" class="panelView">
-        <p id="listHint">Select a stage to preview the in-process model and removal delta.</p>
+        <p id="listHint">Select a stage to preview the in-process model and switch the overlay between delta and removal.</p>
         <ul id="itemList"></ul>
       </section>
     </section>
@@ -304,6 +344,15 @@
   <section id="viewerLayout">
     <section id="mainPane" class="viewerPane">
       <div class="viewerPaneHeader">
+        <div class="viewerPaneHeaderText">
+          <span id="mainViewerTitle" class="viewerPaneHeaderStrong">Preview</span>
+          <span id="mainViewerSubtitle" class="viewerPaneHeaderSub">Final model</span>
+        </div>
+        <div class="overlayToggle" id="mainOverlayToggle">
+          <span class="overlayToggleLabel">Overlay</span>
+          <button id="btnOverlayDelta" type="button" class="overlayToggleButton active">delta</button>
+          <button id="btnOverlayRemoval" type="button" class="overlayToggleButton">removal</button>
+        </div>
         <span>編集中モデル</span>
       </div>
       <section id="viewer">

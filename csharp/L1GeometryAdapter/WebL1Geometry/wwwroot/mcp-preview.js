@@ -8,12 +8,15 @@ const viewerTitleEl = document.getElementById("viewerTitle");
 const viewerSubtitleEl = document.getElementById("viewerSubtitle");
 const sessionSummaryEl = document.getElementById("sessionSummary");
 const btnRefresh = document.getElementById("btnRefresh");
+const btnOverlayDelta = document.getElementById("btnOverlayDelta");
+const btnOverlayRemoval = document.getElementById("btnOverlayRemoval");
 
 const sessionId = new URLSearchParams(window.location.search).get("sessionId");
 const state = {
   sessionId,
   job: null,
   selectedKey: "output",
+  overlayMode: "delta",
   updatedAtUtc: null,
   previewRequestToken: 0,
   previewCache: new Map()
@@ -24,8 +27,11 @@ const viewerState = createViewer("viewer");
 btnRefresh.addEventListener("click", () => {
   void loadSession(true);
 });
+btnOverlayDelta?.addEventListener("click", () => void setOverlayMode("delta"));
+btnOverlayRemoval?.addEventListener("click", () => void setOverlayMode("removal"));
 
 window.addEventListener("resize", () => resizeViewer(viewerState));
+refreshOverlayToggle();
 
 if (!sessionId) {
   setStatus("Missing sessionId query parameter.");
@@ -39,6 +45,42 @@ animate();
 function setStatus(message) {
   const timestamp = new Date().toLocaleTimeString();
   statusEl.textContent = `[${timestamp}] ${message}`;
+}
+
+function isFeatureItem(item) {
+  return item?.key?.startsWith("feature") ?? false;
+}
+
+function getOverlayUrl(preview, item) {
+  if (!isFeatureItem(item)) {
+    return null;
+  }
+
+  return state.overlayMode === "removal"
+    ? preview.removalStlUrl ?? null
+    : preview.deltaStlUrl ?? null;
+}
+
+function refreshOverlayToggle(item = getSelectedItem()) {
+  const enabled = isFeatureItem(item);
+  if (btnOverlayDelta) {
+    btnOverlayDelta.disabled = !enabled;
+    btnOverlayDelta.classList.toggle("active", state.overlayMode === "delta");
+  }
+  if (btnOverlayRemoval) {
+    btnOverlayRemoval.disabled = !enabled;
+    btnOverlayRemoval.classList.toggle("active", state.overlayMode === "removal");
+  }
+}
+
+async function setOverlayMode(mode) {
+  if (mode !== "delta" && mode !== "removal") {
+    return;
+  }
+
+  state.overlayMode = mode;
+  refreshOverlayToggle();
+  await loadSelectedPreview();
 }
 
 function getListItems(job) {
@@ -100,6 +142,7 @@ function renderStageList() {
     button.addEventListener("click", () => {
       state.selectedKey = item.key;
       renderStageList();
+      refreshOverlayToggle(item);
       void loadSelectedPreview();
     });
 
@@ -139,6 +182,7 @@ async function loadSession(forceReload) {
     }
 
     renderStageList();
+    refreshOverlayToggle();
     await loadSelectedPreview();
   } catch (error) {
     setStatus(`Failed to load preview session: ${error.message}`);
@@ -157,7 +201,8 @@ async function loadSelectedPreview() {
 
   const token = ++state.previewRequestToken;
   const cacheKey = `${item.stageIndex}|${JSON.stringify(state.job)}`;
-  updateViewerLabels(item, item.key.startsWith("feature"));
+  refreshOverlayToggle(item);
+  updateViewerLabels(item, false);
 
   try {
     let preview = state.previewCache.get(cacheKey);
@@ -184,20 +229,21 @@ async function loadSelectedPreview() {
       return;
     }
 
-    const shouldShowDelta = item.key.startsWith("feature");
+    const overlayUrl = getOverlayUrl(preview, item);
     await setViewerMeshes(viewerState, {
       modelUrl: preview.modelStlUrl,
-      deltaUrl: shouldShowDelta ? preview.deltaStlUrl ?? null : null
+      overlayUrl,
+      overlayMode: state.overlayMode
     });
 
-    updateViewerLabels(item, shouldShowDelta && Boolean(preview.deltaStlUrl));
+    updateViewerLabels(item, Boolean(overlayUrl));
     setStatus(`Preview ready: ${item.label}`);
   } catch (error) {
     setStatus(`Preview failed: ${error.message}`);
   }
 }
 
-function updateViewerLabels(item, hasDelta) {
+function updateViewerLabels(item, hasOverlay) {
   viewerTitleEl.textContent = `Preview: ${item.label}`;
 
   if (item.key === "stock") {
@@ -205,7 +251,7 @@ function updateViewerLabels(item, hasDelta) {
   } else if (item.key === "output") {
     viewerSubtitleEl.textContent = "Final model";
   } else {
-    viewerSubtitleEl.textContent = hasDelta ? `${item.detail} with delta` : item.detail;
+    viewerSubtitleEl.textContent = hasOverlay ? `${item.detail} with ${state.overlayMode}` : item.detail;
   }
 }
 
@@ -323,21 +369,21 @@ function fitViewerToGroup(currentViewerState) {
   currentViewerState.controls.update();
 }
 
-async function setViewerMeshes(currentViewerState, { modelUrl, deltaUrl }) {
+async function setViewerMeshes(currentViewerState, { modelUrl, overlayUrl, overlayMode = "delta" }) {
   const objectUrls = [];
   try {
     const modelBlobUrl = await fetchStlBlobUrl(modelUrl);
     objectUrls.push(modelBlobUrl);
 
-    let deltaBlobUrl = null;
-    if (deltaUrl) {
-      deltaBlobUrl = await fetchStlBlobUrl(deltaUrl);
-      objectUrls.push(deltaBlobUrl);
+    let overlayBlobUrl = null;
+    if (overlayUrl) {
+      overlayBlobUrl = await fetchStlBlobUrl(overlayUrl);
+      objectUrls.push(overlayBlobUrl);
     }
 
     const modelMaterial = new THREE.MeshPhongMaterial({ color: 0xcdd7e1 });
-    const deltaMaterial = new THREE.MeshPhongMaterial({
-      color: 0x7bdff2,
+    const overlayMaterial = new THREE.MeshPhongMaterial({
+      color: overlayMode === "removal" ? 0xffb366 : 0x7bdff2,
       transparent: true,
       opacity: 0.45,
       depthWrite: false,
@@ -347,8 +393,8 @@ async function setViewerMeshes(currentViewerState, { modelUrl, deltaUrl }) {
     });
 
     const meshPromises = [loadMesh(modelBlobUrl, modelMaterial)];
-    if (deltaBlobUrl) {
-      meshPromises.push(loadMesh(deltaBlobUrl, deltaMaterial));
+    if (overlayBlobUrl) {
+      meshPromises.push(loadMesh(overlayBlobUrl, overlayMaterial));
     }
 
     const meshes = await Promise.all(meshPromises);

@@ -140,6 +140,36 @@
       margin-top: 4px;
     }
 
+    .overlayToggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .overlayToggleLabel {
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .overlayToggleButton {
+      min-width: 78px;
+      border-radius: 999px;
+      background: #18212d;
+    }
+
+    .overlayToggleButton.active {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+    }
+
+    .overlayToggleButton:disabled {
+      cursor: default;
+      opacity: 0.45;
+    }
+
     #status {
       padding: 10px 18px;
       border-bottom: 1px solid var(--panel-border);
@@ -187,6 +217,11 @@
       <div>
         <div id="viewerTitle">Preview</div>
         <div id="viewerSubtitle">Waiting for session data</div>
+      </div>
+      <div class="overlayToggle" id="viewerOverlayToggle">
+        <span class="overlayToggleLabel">Overlay</span>
+        <button id="btnOverlayDelta" type="button" class="overlayToggleButton active">delta</button>
+        <button id="btnOverlayRemoval" type="button" class="overlayToggleButton">removal</button>
       </div>
     </section>
     <div id="status"></div>
