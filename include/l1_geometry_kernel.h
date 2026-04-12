@@ -121,6 +121,15 @@ L1_API int   L1_ApplyMillContour(void* kernel, int stockId,
 
 L1_API int   L1_DeleteShape(void* kernel, int shapeId);
 
+L1_API int   L1_TryResolveLineLineFillet(const Path2DPointDto* previousStart,
+                                         const Path2DPointDto* corner,
+                                         const Path2DPointDto* nextEnd,
+                                         double radius,
+                                         Path2DPointDto* outTangentFrom,
+                                         Path2DPointDto* outTangentTo,
+                                         Path2DPointDto* outCenter,
+                                         ArcDirection* outArcDirection);
+
 L1_API int   L1_ImportStepAsShape(void* kernel,
                                   const char* filePathUtf8,
                                   int* outShapeId);

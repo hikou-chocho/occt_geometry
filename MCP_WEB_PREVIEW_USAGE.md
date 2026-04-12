@@ -131,7 +131,8 @@ The preview page shows:
 - The Web app stores preview sessions in memory
 - If the Web app restarts, previously issued preview URLs stop working
 - Hard-gate validation for `/pipeline/*` is not implemented yet
-- Path2D kernel-safe validation is not implemented yet
+- Path2D `LINE-fillet-LINE` validation now supports `segment.corner.radius`
+- Explicit `ARC` geometry is still supported alongside `corner.radius`
 
 ## Troubleshooting
 

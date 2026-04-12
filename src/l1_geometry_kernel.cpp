@@ -22,11 +22,20 @@
 #include <BRepPrimAPI_MakePrism.hxx>
 #include <BRepPrimAPI_MakeRevol.hxx>
 #include <GC_MakeArcOfCircle.hxx>
+#include <Geom2dAdaptor_Curve.hxx>
+#include <Geom2dGcc.hxx>
+#include <Geom2dGcc_Circ2d2TanRad.hxx>
+#include <Geom2dGcc_QualifiedCurve.hxx>
+#include <Geom2d_Line.hxx>
 #include <TopoDS_Edge.hxx>
 #include <TopoDS_Face.hxx>
 #include <gp_Ax2.hxx>
 #include <gp_Ax1.hxx>
+#include <gp_Circ2d.hxx>
+#include <gp_Dir2d.hxx>
 #include <gp_Dir.hxx>
+#include <gp_Lin2d.hxx>
+#include <gp_Pnt2d.hxx>
 #include <gp_Pnt.hxx>
 #include <gp_Vec.hxx>
 #include <STEPControl_Reader.hxx>
@@ -138,6 +147,144 @@ double Distance2D(const UvPoint& a, const UvPoint& b) {
 
 bool NearlyEqual(const UvPoint& a, const UvPoint& b) {
   return Distance2D(a, b) <= kGeomTol;
+}
+
+UvPoint ToUvPoint(const Path2DPointDto& point) {
+  return UvPoint{point.u, point.v};
+}
+
+Path2DPointDto ToDtoPoint(const UvPoint& point) {
+  return Path2DPointDto{point.u, point.v};
+}
+
+double Dot2D(const UvPoint& a, const UvPoint& b) {
+  return a.u * b.u + a.v * b.v;
+}
+
+double Cross2D(const UvPoint& a, const UvPoint& b) {
+  return a.u * b.v - a.v * b.u;
+}
+
+UvPoint Subtract2D(const UvPoint& a, const UvPoint& b) {
+  return UvPoint{a.u - b.u, a.v - b.v};
+}
+
+double LengthSquared2D(const UvPoint& vector) {
+  return Dot2D(vector, vector);
+}
+
+bool PointOnSegment(const UvPoint& start, const UvPoint& end, const UvPoint& point, double* outParameter) {
+  const UvPoint edge = Subtract2D(end, start);
+  const double lengthSquared = LengthSquared2D(edge);
+  if (lengthSquared <= kGeomTol * kGeomTol) return false;
+
+  const UvPoint offset = Subtract2D(point, start);
+  const double parameter = Dot2D(offset, edge) / lengthSquared;
+  const UvPoint projected{start.u + edge.u * parameter, start.v + edge.v * parameter};
+  if (Distance2D(projected, point) > 1.0e-6) return false;
+  if (parameter < -1.0e-6 || parameter > 1.0 + 1.0e-6) return false;
+
+  if (outParameter) *outParameter = parameter;
+  return true;
+}
+
+bool BuildFilletFromLineLine(const UvPoint& previousStart,
+                             const UvPoint& corner,
+                             const UvPoint& nextEnd,
+                             double radius,
+                             UvPoint* outTangentFrom,
+                             UvPoint* outTangentTo,
+                             UvPoint* outCenter,
+                             ArcDirection* outArcDirection,
+                             int* outErrorCode) {
+  if (radius <= kGeomTol) {
+    *outErrorCode = ERROR_INVALID_ARGUMENT;
+    return false;
+  }
+
+  if (NearlyEqual(previousStart, corner) || NearlyEqual(corner, nextEnd)) {
+    *outErrorCode = ERROR_INVALID_ARGUMENT;
+    return false;
+  }
+
+  const UvPoint prevDirection = Subtract2D(corner, previousStart);
+  const UvPoint nextDirection = Subtract2D(nextEnd, corner);
+  const double prevLengthSquared = LengthSquared2D(prevDirection);
+  const double nextLengthSquared = LengthSquared2D(nextDirection);
+  if (prevLengthSquared <= kGeomTol * kGeomTol || nextLengthSquared <= kGeomTol * kGeomTol) {
+    *outErrorCode = ERROR_INVALID_ARGUMENT;
+    return false;
+  }
+
+  const double normalizedCross =
+      Cross2D(prevDirection, nextDirection) /
+      std::sqrt(prevLengthSquared * nextLengthSquared);
+  if (std::fabs(normalizedCross) <= 1.0e-9) {
+    *outErrorCode = ERROR_BOOLEAN_FAILED;
+    return false;
+  }
+
+  try {
+    Handle(Geom2d_Line) prevLine =
+        new Geom2d_Line(gp_Lin2d(gp_Pnt2d(previousStart.u, previousStart.v),
+                                 gp_Dir2d(prevDirection.u, prevDirection.v)));
+    Handle(Geom2d_Line) nextLine =
+        new Geom2d_Line(gp_Lin2d(gp_Pnt2d(corner.u, corner.v),
+                                 gp_Dir2d(nextDirection.u, nextDirection.v)));
+
+    Geom2dAdaptor_Curve prevAdaptor(prevLine);
+    Geom2dAdaptor_Curve nextAdaptor(nextLine);
+    Geom2dGcc_Circ2d2TanRad solver(Geom2dGcc::Unqualified(prevAdaptor),
+                                   Geom2dGcc::Unqualified(nextAdaptor),
+                                   radius, kGeomTol);
+    if (!solver.IsDone()) {
+      *outErrorCode = ERROR_BOOLEAN_FAILED;
+      return false;
+    }
+
+    bool   found = false;
+    double bestScore = 0.0;
+    for (int solutionIndex = 1; solutionIndex <= solver.NbSolutions(); ++solutionIndex) {
+      Standard_Real prevParSol = 0.0, prevParArg = 0.0;
+      Standard_Real nextParSol = 0.0, nextParArg = 0.0;
+      gp_Pnt2d prevTangency;
+      gp_Pnt2d nextTangency;
+      solver.Tangency1(solutionIndex, prevParSol, prevParArg, prevTangency);
+      solver.Tangency2(solutionIndex, nextParSol, nextParArg, nextTangency);
+
+      const UvPoint tangentFrom{prevTangency.X(), prevTangency.Y()};
+      const UvPoint tangentTo{nextTangency.X(), nextTangency.Y()};
+
+      double prevParameter = 0.0;
+      double nextParameter = 0.0;
+      if (!PointOnSegment(previousStart, corner, tangentFrom, &prevParameter)) continue;
+      if (!PointOnSegment(corner, nextEnd, tangentTo, &nextParameter)) continue;
+      if (prevParameter <= 1.0e-6 || prevParameter >= 1.0 - 1.0e-6) continue;
+      if (nextParameter <= 1.0e-6 || nextParameter >= 1.0 - 1.0e-6) continue;
+
+      const gp_Circ2d solution = solver.ThisSolution(solutionIndex);
+      const UvPoint center{solution.Location().X(), solution.Location().Y()};
+      const UvPoint radialFrom = Subtract2D(tangentFrom, center);
+      const UvPoint radialTo = Subtract2D(tangentTo, center);
+      const ArcDirection direction = Cross2D(radialFrom, radialTo) >= 0.0 ? ARC_DIR_CCW : ARC_DIR_CW;
+
+      const double score = Distance2D(tangentFrom, corner) + Distance2D(tangentTo, corner);
+      if (!found || score < bestScore) {
+        found = true;
+        bestScore = score;
+        *outTangentFrom = tangentFrom;
+        *outTangentTo = tangentTo;
+        *outCenter = center;
+        *outArcDirection = direction;
+      }
+    }
+
+    *outErrorCode = found ? ERROR_OK : ERROR_BOOLEAN_FAILED;
+    return found;
+  } catch (...) {
+    *outErrorCode = ERROR_OCCT_EXCEPTION;
+    return false;
+  }
 }
 
 gp_Pnt To3DPoint(const UvPoint& uv, const AxisDto& axis, PathFrameMode mode) {
@@ -605,6 +752,45 @@ int L1_DeleteShape(void* kernel, int shapeId) {
   try {
     auto* impl = static_cast<OcctKernelImpl*>(kernel);
     return impl->Registry().Remove(shapeId) ? ERROR_OK : ERROR_SHAPE_NOT_FOUND;
+  } catch (...) {
+    return MapExceptionToError();
+  }
+}
+
+int L1_TryResolveLineLineFillet(const Path2DPointDto* previousStart,
+                                const Path2DPointDto* corner,
+                                const Path2DPointDto* nextEnd,
+                                double radius,
+                                Path2DPointDto* outTangentFrom,
+                                Path2DPointDto* outTangentTo,
+                                Path2DPointDto* outCenter,
+                                ArcDirection* outArcDirection) {
+  if (!previousStart || !corner || !nextEnd ||
+      !outTangentFrom || !outTangentTo || !outCenter || !outArcDirection) {
+    return ERROR_INVALID_ARGUMENT;
+  }
+
+  try {
+    UvPoint tangentFrom{};
+    UvPoint tangentTo{};
+    UvPoint centerPoint{};
+    int errorCode = ERROR_OK;
+    if (!BuildFilletFromLineLine(ToUvPoint(*previousStart),
+                                 ToUvPoint(*corner),
+                                 ToUvPoint(*nextEnd),
+                                 radius,
+                                 &tangentFrom,
+                                 &tangentTo,
+                                 &centerPoint,
+                                 outArcDirection,
+                                 &errorCode)) {
+      return errorCode;
+    }
+
+    *outTangentFrom = ToDtoPoint(tangentFrom);
+    *outTangentTo = ToDtoPoint(tangentTo);
+    *outCenter = ToDtoPoint(centerPoint);
+    return ERROR_OK;
   } catch (...) {
     return MapExceptionToError();
   }

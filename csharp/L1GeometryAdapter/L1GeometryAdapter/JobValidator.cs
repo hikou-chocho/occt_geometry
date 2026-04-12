@@ -145,6 +145,12 @@ public static class JobValidator
 				errors.Add(Error("INVALID_SEGMENT_TYPE", $"{segPath}.type",
 				                 $"{segPath}.type must be LINE or ARC."));
 		}
+
+		if (errors.Any(e => e.Path == path || e.Path.StartsWith($"{path}.segments[", StringComparison.Ordinal)))
+			return;
+
+		if (!Path2DProfileResolver.TryResolveConcreteSegments(profile, path, out _, out var resolutionErrors))
+			errors.AddRange(resolutionErrors);
 	}
 
 	private static ValidationError Error(string code, string path, string message)

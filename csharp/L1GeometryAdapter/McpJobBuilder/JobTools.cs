@@ -57,7 +57,7 @@ internal static class JobTools
 
 	[McpServerTool(Name = "job_add_feature"), Description(
 		"Adds or inserts a feature into an existing job. " +
-		"feature.type is normalized (Trim + UpperCase). No validation is performed [D2]. " +
+		"feature.type is normalized (Trim + UpperCase). Path2D segments may use explicit ARC geometry or LINE segment corner.radius for server-side fillets. No validation is performed [D2]. " +
 		"index rules: null or < 0 or >= features.count → append; otherwise insert at index [D3].")]
 	internal static string JobAddFeature(
 		[Description("The current job.")] JobJsonModel job,

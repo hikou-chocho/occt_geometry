@@ -153,6 +153,12 @@ public sealed class Path2DPointJsonModel
 	public Path2DPointDto ToKernel() => new() { U = U, V = V };
 }
 
+public sealed class CornerJsonModel
+{
+	[JsonPropertyAttribute("radius")]
+	public double Radius { get; set; }
+}
+
 public sealed class Path2DSegmentJsonModel
 {
 	[JsonPropertyAttribute("type")]
@@ -169,6 +175,9 @@ public sealed class Path2DSegmentJsonModel
 
 	[JsonPropertyAttribute("arcDirection")]
 	public string? ArcDirection { get; set; }
+
+	[JsonPropertyAttribute("corner")]
+	public CornerJsonModel? Corner { get; set; }
 
 	public Path2DSegmentDto ToKernel()
 	{
@@ -211,10 +220,7 @@ public sealed class Path2DProfileJsonModel
 
 	public Path2DSegmentDto[] ToKernelSegments()
 	{
-		var result = new Path2DSegmentDto[Segments.Count];
-		for (int i = 0; i < Segments.Count; i++)
-			result[i] = Segments[i].ToKernel();
-		return result;
+		return Path2DProfileResolver.ResolveConcreteSegments(this);
 	}
 }
 

@@ -169,6 +169,17 @@ namespace L1GeometryAdapter
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         internal static extern int L1_DeleteShape(IntPtr kernel, int shapeId);
 
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern int L1_TryResolveLineLineFillet(
+            ref Path2DPointDto previousStart,
+            ref Path2DPointDto corner,
+            ref Path2DPointDto nextEnd,
+            double radius,
+            out Path2DPointDto outTangentFrom,
+            out Path2DPointDto outTangentTo,
+            out Path2DPointDto outCenter,
+            out ArcDirection outArcDirection);
+
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
         internal static extern int L1_ImportStepAsShape(
             IntPtr kernel,
