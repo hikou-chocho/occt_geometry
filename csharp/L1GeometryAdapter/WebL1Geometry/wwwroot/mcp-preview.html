@@ -148,6 +148,14 @@
       flex-wrap: wrap;
     }
 
+    .viewerActions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
     .overlayToggleLabel {
       font-size: 11px;
       color: var(--muted);
@@ -167,6 +175,11 @@
     }
 
     .overlayToggleButton:disabled {
+      cursor: default;
+      opacity: 0.45;
+    }
+
+    button:disabled {
       cursor: default;
       opacity: 0.45;
     }
@@ -220,10 +233,13 @@
         <div id="viewerTitle">Preview</div>
         <div id="viewerSubtitle">Waiting for session data</div>
       </div>
-      <div class="overlayToggle" id="viewerOverlayToggle">
-        <span class="overlayToggleLabel">Overlay</span>
-        <button id="btnOverlayDelta" type="button" class="overlayToggleButton active">delta</button>
-        <button id="btnOverlayRemoval" type="button" class="overlayToggleButton">removal</button>
+      <div class="viewerActions">
+        <button id="btnDownloadStep" type="button">Download STEP</button>
+        <div class="overlayToggle" id="viewerOverlayToggle">
+          <span class="overlayToggleLabel">Overlay</span>
+          <button id="btnOverlayDelta" type="button" class="overlayToggleButton active">delta</button>
+          <button id="btnOverlayRemoval" type="button" class="overlayToggleButton">removal</button>
+        </div>
       </div>
     </section>
     <div id="status"></div>

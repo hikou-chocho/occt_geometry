@@ -41,3 +41,4 @@ obj/
 bin/
 /csharp/L1GeometryAdapter/WebL1Geometry/output/
 .github/
+.vscode/

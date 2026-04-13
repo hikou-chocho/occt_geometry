@@ -41,9 +41,7 @@ internal static class PreviewBridgeRoutes
 
 		app.MapGet("/preview-api/session/{sessionId}", (string sessionId) =>
 		{
-			CleanupExpiredSessions();
-
-			if (!Sessions.TryGetValue(sessionId, out var session))
+			if (!TryGetSession(sessionId, out var session))
 				return Results.NotFound(new PreviewSessionPayloadResponse { Ok = false, Error = "Preview session not found." });
 
 			return Results.Ok(new PreviewSessionPayloadResponse
@@ -56,6 +54,12 @@ internal static class PreviewBridgeRoutes
 		});
 
 		return app;
+	}
+
+	internal static bool TryGetSession(string sessionId, out PreviewSessionState session)
+	{
+		CleanupExpiredSessions();
+		return Sessions.TryGetValue(sessionId, out session!);
 	}
 
 	private static void CleanupExpiredSessions()

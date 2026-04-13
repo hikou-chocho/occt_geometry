@@ -9,7 +9,7 @@ This repository now supports a minimal flow:
 3. Open a preview-only Web page and inspect stock, each feature stage, and the final model
 
 In this flow, the authoritative `job.json` remains on the VSCode side.
-The Web app is display-only.
+The Web app does not edit the job, but the final output stage can export a STEP file on demand.
 
 ## Components
 
@@ -122,12 +122,13 @@ The preview page shows:
 - stock-only stage
 - each feature stage with `model + delta`
 - final output stage with final model
+- `output` stage only: `Download STEP`
 
 `removal` is intentionally not shown in this v1 flow.
 
 ## Notes
 
-- The preview page is read-only
+- The preview page is read-only except for final STEP download
 - The Web app stores preview sessions in memory
 - If the Web app restarts, previously issued preview URLs stop working
 - Hard-gate validation for `/pipeline/*` is not implemented yet

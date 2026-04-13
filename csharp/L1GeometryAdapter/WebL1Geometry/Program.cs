@@ -6,8 +6,10 @@ var app = builder.Build();
 
 var outputRoot = Path.Combine(app.Environment.ContentRootPath, "output");
 var previewRoot = Path.Combine(outputRoot, "preview");
+var previewStepRoot = Path.Combine(outputRoot, "preview-step");
 Directory.CreateDirectory(outputRoot);
 Directory.CreateDirectory(previewRoot);
+Directory.CreateDirectory(previewStepRoot);
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
@@ -73,32 +75,21 @@ app.MapPost("/pipeline/run", (JobJsonModel request) =>
 		var removalStlPath = removalStlFile is null ? null : Path.Combine(runDir, removalStlFile);
 
 		using var kernel = new L1Kernel();
+		var replay = ReplayJob(kernel, request);
+		if (!replay.HasFeatureResult)
+			throw new InvalidOperationException("features must contain at least one item.");
 
-		var stock = job.Stock;
-		var stockId = kernel.CreateStock(ref stock);
+		var stepOpt = CreateOutputOptions(request.Output, OutputFormat.Step);
+		var stlOpt = CreateOutputOptions(request.Output, OutputFormat.Stl);
 
-		int currentId = stockId;
-		OperationResult finalResult = default;
-		foreach (var feature in job.Features)
-		{
-			finalResult = ApplyFeature(kernel, currentId, feature);
-			currentId = finalResult.ResultShapeId;
-		}
-
-		var stepOpt = job.OutputOptions;
-		stepOpt.Format = OutputFormat.Step;
-
-		var stlOpt = job.OutputOptions;
-		stlOpt.Format = OutputFormat.Stl;
-
-		kernel.ExportShape(finalResult.ResultShapeId, stepOpt, stepPath);
-		kernel.ExportShape(finalResult.ResultShapeId, stlOpt, stlPath);
-		kernel.ExportShape(finalResult.DeltaShapeId, stepOpt, deltaStepPath);
-		kernel.ExportShape(finalResult.DeltaShapeId, stlOpt, deltaStlPath);
+		kernel.ExportShape(replay.FinalShapeId, stepOpt, stepPath);
+		kernel.ExportShape(replay.FinalShapeId, stlOpt, stlPath);
+		kernel.ExportShape(replay.LastResult.DeltaShapeId, stepOpt, deltaStepPath);
+		kernel.ExportShape(replay.LastResult.DeltaShapeId, stlOpt, deltaStlPath);
 		if (removalStepPath is not null)
-			kernel.ExportShape(finalResult.RemovalShapeId, stepOpt, removalStepPath);
+			kernel.ExportShape(replay.LastResult.RemovalShapeId, stepOpt, removalStepPath);
 		if (removalStlPath is not null)
-			kernel.ExportShape(finalResult.RemovalShapeId, stlOpt, removalStlPath);
+			kernel.ExportShape(replay.LastResult.RemovalShapeId, stlOpt, removalStlPath);
 
 		return Results.Ok(new PipelineRunResponse
 		{
@@ -121,6 +112,50 @@ app.MapPost("/pipeline/run", (JobJsonModel request) =>
 	}
 });
 
+app.MapPost("/preview-api/session/{sessionId}/final-step", (string sessionId) =>
+{
+	if (string.IsNullOrWhiteSpace(sessionId))
+		return Results.BadRequest(new { error = "sessionId is required." });
+
+	if (!PreviewBridgeRoutes.TryGetSession(sessionId, out var session))
+		return Results.NotFound(new { error = "Preview session not found." });
+
+	try
+	{
+		CleanupOldDirectories(previewStepRoot, TimeSpan.FromMinutes(10));
+
+		var stepId = $"preview-step-{DateTime.UtcNow:yyyyMMddHHmmssfff}-{Guid.NewGuid():N}";
+		var stepDir = Path.Combine(previewStepRoot, stepId);
+		Directory.CreateDirectory(stepDir);
+
+		try
+		{
+			var stepFile = SanitizeFileName(session.Job.Output.StepFile, "result.step");
+			var stepPath = Path.Combine(stepDir, stepFile);
+
+			using var kernel = new L1Kernel();
+			var replay = ReplayJob(kernel, session.Job);
+			var stepOpt = CreateOutputOptions(session.Job.Output, OutputFormat.Step);
+			kernel.ExportShape(replay.FinalShapeId, stepOpt, stepPath);
+
+			var bytes = System.IO.File.ReadAllBytes(stepPath);
+			return Results.File(bytes, "application/step", stepFile);
+		}
+		finally
+		{
+			TryDeleteDirectory(stepDir);
+		}
+	}
+	catch (InvalidOperationException ex)
+	{
+		return Results.BadRequest(new { error = ex.Message });
+	}
+	catch (Exception ex)
+	{
+		return Results.Problem(title: "Final STEP generation failed", detail: ex.Message, statusCode: 500);
+	}
+});
+
 app.MapPost("/pipeline/preview", (PreviewStageRequest request) =>
 {
 	try
@@ -136,11 +171,9 @@ app.MapPost("/pipeline/preview", (PreviewStageRequest request) =>
 		var deltaPath = Path.Combine(previewDir, deltaFile);
 		var removalPath = Path.Combine(previewDir, removalFile);
 
-		var stlOpt = CreateStlOutputOptions(request.Job.Output);
-
 		using var kernel = new L1Kernel();
-		var stock = request.Job.Stock.ToKernel();
-		var stockId = kernel.CreateStock(ref stock);
+		var stlOpt = CreateOutputOptions(request.Job.Output, OutputFormat.Stl);
+		var stockId = CreateStockShapeId(kernel, request.Job);
 
 		var stageIndex = request.StageIndex;
 		var featureCount = request.Job.Features.Count;
@@ -148,7 +181,7 @@ app.MapPost("/pipeline/preview", (PreviewStageRequest request) =>
 		if (stageIndex < 0 || featureCount == 0)
 		{
 			kernel.ExportShape(stockId, stlOpt, modelPath);
-			CleanupOldReferenceDirectories(previewRoot, TimeSpan.FromMinutes(10));
+			CleanupOldDirectories(previewRoot, TimeSpan.FromMinutes(10));
 			return Results.Ok(new PreviewStageResponse
 			{
 				StageIndex = stageIndex,
@@ -179,7 +212,7 @@ app.MapPost("/pipeline/preview", (PreviewStageRequest request) =>
 			removalUrl = $"/output/preview/{previewId}/{removalFile}";
 		}
 
-		CleanupOldReferenceDirectories(previewRoot, TimeSpan.FromMinutes(10));
+		CleanupOldDirectories(previewRoot, TimeSpan.FromMinutes(10));
 
 		return Results.Ok(new PreviewStageResponse
 		{
@@ -254,7 +287,7 @@ app.MapPost("/pipeline/reference-step", async (HttpRequest request) =>
 		{
 		}
 
-		CleanupOldReferenceDirectories(Path.Combine(outputRoot, "reference"), TimeSpan.FromMinutes(10));
+		CleanupOldDirectories(Path.Combine(outputRoot, "reference"), TimeSpan.FromMinutes(10));
 
 		return Results.Ok(new ReferenceStepResponse
 		{
@@ -287,14 +320,43 @@ static string SanitizeFileName(string? value, string fallback)
 	return nameOnly;
 }
 
-static OutputOptions CreateStlOutputOptions(OutputJsonModel output)
+static OutputOptions CreateOutputOptions(OutputJsonModel output, OutputFormat format)
 {
 	return new OutputOptions
 	{
-		Format = OutputFormat.Stl,
+		Format = format,
 		LinearDeflection = output.LinearDeflection,
 		AngularDeflection = output.AngularDeflection,
 		Parallel = output.Parallel,
+	};
+}
+
+static int CreateStockShapeId(L1Kernel kernel, JobJsonModel job)
+{
+	var stock = job.Stock.ToKernel();
+	return kernel.CreateStock(ref stock);
+}
+
+static ReplayJobResult ReplayJob(L1Kernel kernel, JobJsonModel job)
+{
+	var stockId = CreateStockShapeId(kernel, job);
+	var currentId = stockId;
+	var hasFeatureResult = false;
+	OperationResult lastResult = default;
+
+	foreach (var feature in job.Features)
+	{
+		lastResult = ApplyFeature(kernel, currentId, feature);
+		currentId = lastResult.ResultShapeId;
+		hasFeatureResult = true;
+	}
+
+	return new ReplayJobResult
+	{
+		StockShapeId = stockId,
+		FinalShapeId = hasFeatureResult ? currentId : stockId,
+		HasFeatureResult = hasFeatureResult,
+		LastResult = lastResult,
 	};
 }
 
@@ -342,15 +404,15 @@ static void TryDeleteDirectory(string path)
 	}
 }
 
-static void CleanupOldReferenceDirectories(string referenceRoot, TimeSpan ttl)
+static void CleanupOldDirectories(string rootPath, TimeSpan ttl)
 {
 	try
 	{
-		if (!Directory.Exists(referenceRoot))
+		if (!Directory.Exists(rootPath))
 			return;
 
 		var now = DateTime.UtcNow;
-		foreach (var dir in Directory.EnumerateDirectories(referenceRoot))
+		foreach (var dir in Directory.EnumerateDirectories(rootPath))
 		{
 			var lastWriteUtc = Directory.GetLastWriteTimeUtc(dir);
 			if ((now - lastWriteUtc) > ttl)
@@ -360,6 +422,14 @@ static void CleanupOldReferenceDirectories(string referenceRoot, TimeSpan ttl)
 	catch
 	{
 	}
+}
+
+readonly record struct ReplayJobResult
+{
+	public int StockShapeId { get; init; }
+	public int FinalShapeId { get; init; }
+	public bool HasFeatureResult { get; init; }
+	public OperationResult LastResult { get; init; }
 }
 
 sealed class PipelineRunResponse

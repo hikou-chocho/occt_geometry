@@ -9,6 +9,7 @@ const viewerTitleEl = document.getElementById("viewerTitle");
 const viewerSubtitleEl = document.getElementById("viewerSubtitle");
 const sessionSummaryEl = document.getElementById("sessionSummary");
 const btnRefresh = document.getElementById("btnRefresh");
+const btnDownloadStep = document.getElementById("btnDownloadStep");
 const btnOverlayDelta = document.getElementById("btnOverlayDelta");
 const btnOverlayRemoval = document.getElementById("btnOverlayRemoval");
 
@@ -20,7 +21,8 @@ const state = {
   overlayMode: "delta",
   updatedAtUtc: null,
   previewRequestToken: 0,
-  previewCache: new Map()
+  previewCache: new Map(),
+  downloadInProgress: false
 };
 
 const viewerState = createViewer("viewer");
@@ -28,11 +30,15 @@ const viewerState = createViewer("viewer");
 btnRefresh.addEventListener("click", () => {
   void loadSession(true);
 });
+btnDownloadStep?.addEventListener("click", () => {
+  void downloadFinalStep();
+});
 btnOverlayDelta?.addEventListener("click", () => void setOverlayMode("delta"));
 btnOverlayRemoval?.addEventListener("click", () => void setOverlayMode("removal"));
 
 window.addEventListener("resize", () => resizeViewer(viewerState));
 refreshOverlayToggle();
+refreshDownloadButton();
 
 if (!sessionId) {
   setStatus("Missing sessionId query parameter.");
@@ -50,6 +56,10 @@ function setStatus(message) {
 
 function isFeatureItem(item) {
   return item?.key?.startsWith("feature") ?? false;
+}
+
+function isOutputItem(item) {
+  return item?.key === "output";
 }
 
 function getOverlayUrl(preview, item) {
@@ -72,6 +82,15 @@ function refreshOverlayToggle(item = getSelectedItem()) {
     btnOverlayRemoval.disabled = !enabled;
     btnOverlayRemoval.classList.toggle("active", state.overlayMode === "removal");
   }
+}
+
+function refreshDownloadButton(item = getSelectedItem()) {
+  if (!btnDownloadStep) {
+    return;
+  }
+
+  btnDownloadStep.textContent = state.downloadInProgress ? "Downloading..." : "Download STEP";
+  btnDownloadStep.disabled = !state.sessionId || !state.job || !isOutputItem(item) || state.downloadInProgress;
 }
 
 async function setOverlayMode(mode) {
@@ -144,6 +163,7 @@ function renderStageList() {
       state.selectedKey = item.key;
       renderStageList();
       refreshOverlayToggle(item);
+      refreshDownloadButton(item);
       void loadSelectedPreview();
     });
 
@@ -171,6 +191,10 @@ async function loadSession(forceReload) {
       const message = body?.error || `HTTP ${response.status}`;
       setStatus(`Failed to load preview session: ${message}`);
       sessionSummaryEl.textContent = "Preview session is unavailable.";
+      state.job = null;
+      renderStageList();
+      refreshOverlayToggle(null);
+      refreshDownloadButton(null);
       return;
     }
 
@@ -184,9 +208,14 @@ async function loadSession(forceReload) {
 
     renderStageList();
     refreshOverlayToggle();
+    refreshDownloadButton();
     await loadSelectedPreview();
   } catch (error) {
     setStatus(`Failed to load preview session: ${error.message}`);
+    state.job = null;
+    renderStageList();
+    refreshOverlayToggle(null);
+    refreshDownloadButton(null);
   }
 }
 
@@ -203,6 +232,7 @@ async function loadSelectedPreview() {
   const token = ++state.previewRequestToken;
   const cacheKey = `${item.stageIndex}|${JSON.stringify(state.job)}`;
   refreshOverlayToggle(item);
+  refreshDownloadButton(item);
   updateViewerLabels(item, false);
 
   try {
@@ -241,6 +271,49 @@ async function loadSelectedPreview() {
     setStatus(`Preview ready: ${item.label}`);
   } catch (error) {
     setStatus(`Preview failed: ${error.message}`);
+  }
+}
+
+async function downloadFinalStep() {
+  const item = getSelectedItem();
+  if (!state.sessionId || !state.job || !isOutputItem(item) || state.downloadInProgress) {
+    return;
+  }
+
+  state.downloadInProgress = true;
+  refreshDownloadButton(item);
+  setStatus("Generating final STEP ...");
+
+  try {
+    const response = await fetch(`/preview-api/session/${encodeURIComponent(state.sessionId)}/final-step`, {
+      method: "POST"
+    });
+
+    if (!response.ok) {
+      throw new Error(await readErrorMessage(response));
+    }
+
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const fileName = getDownloadFileName(
+      response.headers.get("content-disposition"),
+      state.job.output?.stepFile || "result.step"
+    );
+
+    const anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = fileName;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(objectUrl);
+
+    setStatus(`STEP download ready: ${fileName}`);
+  } catch (error) {
+    setStatus(`STEP download failed: ${error.message}`);
+  } finally {
+    state.downloadInProgress = false;
+    refreshDownloadButton(getSelectedItem());
   }
 }
 
@@ -341,6 +414,33 @@ async function fetchStlBlobUrl(url) {
 
   const blob = await response.blob();
   return URL.createObjectURL(blob);
+}
+
+async function readErrorMessage(response) {
+  const contentType = response.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    const body = await response.json();
+    return body?.error || body?.detail || `HTTP ${response.status}`;
+  }
+
+  const text = await response.text();
+  return text || `HTTP ${response.status}`;
+}
+
+function getDownloadFileName(contentDisposition, fallback) {
+  if (contentDisposition) {
+    const encodedMatch = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+    if (encodedMatch?.[1]) {
+      return decodeURIComponent(encodedMatch[1]);
+    }
+
+    const plainMatch = contentDisposition.match(/filename="?([^";]+)"?/i);
+    if (plainMatch?.[1]) {
+      return plainMatch[1];
+    }
+  }
+
+  return fallback;
 }
 
 function loadMesh(url, material) {
