@@ -1,7 +1,6 @@
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 import { OrbitControls } from "https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js";
 import { STLLoader } from "https://unpkg.com/three@0.160.0/examples/jsm/loaders/STLLoader.js";
-import { attachCameraAxisOverlay, updateCameraAxisOverlay } from "./camera-axis-overlay.js";
 
 const defaultJob = {
   stock: {
@@ -637,16 +636,13 @@ function createViewer(containerId) {
   const meshGroup = new THREE.Group();
   scene.add(meshGroup);
 
-  const axisOverlay = attachCameraAxisOverlay(container, `${containerId}.camera.axis`);
-
   return {
     container,
     scene,
     camera,
     renderer,
     controls,
-    meshGroup,
-    axisOverlay
+    meshGroup
   };
 }
 
@@ -675,13 +671,11 @@ function animate() {
   if (viewerStates.main) {
     viewerStates.main.controls.update();
     viewerStates.main.renderer.render(viewerStates.main.scene, viewerStates.main.camera);
-    updateCameraAxisOverlay(viewerStates.main.axisOverlay, viewerStates.main.camera, "main.camera.axis");
   }
 
   if (compareVisible && viewerStates.reference) {
     viewerStates.reference.controls.update();
     viewerStates.reference.renderer.render(viewerStates.reference.scene, viewerStates.reference.camera);
-    updateCameraAxisOverlay(viewerStates.reference.axisOverlay, viewerStates.reference.camera, "reference.camera.axis");
   }
 }
 
