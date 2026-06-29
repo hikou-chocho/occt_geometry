@@ -26,6 +26,7 @@
 #include <TopoDS_Face.hxx>
 #include <gp_Ax2.hxx>
 #include <gp_Ax1.hxx>
+#include <gp_Circ.hxx>
 #include <gp_Dir.hxx>
 #include <gp_Pnt.hxx>
 #include <gp_Vec.hxx>
@@ -80,8 +81,7 @@ class OcctKernelImpl {
 int MapExceptionToError() { return ERROR_OCCT_EXCEPTION; }
 
 constexpr double kGeomTol = 1.0e-7;
-constexpr double kPi      = 3.14159265358979323846;
-constexpr double kTwoPi   = 2.0 * kPi;
+constexpr double kFullRevolutionRadians = 6.28318530717958647692;
 
 struct UvPoint { double u, v; };
 
@@ -157,8 +157,9 @@ gp_Pnt To3DPoint(const UvPoint& uv, const AxisDto& axis, PathFrameMode mode) {
 }
 
 bool ComputeArcGeometry(const Path2DSegmentDto& segment,
-                        double* outRadius, double* outStartAngle, double* outEndAngle,
-                        int* outErrorCode) {
+                        const AxisDto& axis, PathFrameMode mode,
+                        gp_Circ* outCircle, gp_Pnt* outFrom, gp_Pnt* outTo,
+                        Standard_Boolean* outSense, int* outErrorCode) {
   const UvPoint from  {segment.from.u,   segment.from.v};
   const UvPoint to    {segment.to.u,     segment.to.v};
   const UvPoint center{segment.center.u, segment.center.v};
@@ -168,8 +169,12 @@ bool ComputeArcGeometry(const Path2DSegmentDto& segment,
     return false;
   }
 
-  const double r0 = Distance2D(from, center);
-  const double r1 = Distance2D(to,   center);
+  const gp_Pnt pFrom   = To3DPoint(from, axis, mode);
+  const gp_Pnt pTo     = To3DPoint(to, axis, mode);
+  const gp_Pnt pCenter = To3DPoint(center, axis, mode);
+
+  const double r0 = pCenter.Distance(pFrom);
+  const double r1 = pCenter.Distance(pTo);
   if (r0 <= kGeomTol || r1 <= kGeomTol) {
     *outErrorCode = ERROR_INVALID_ARGUMENT;
     return false;
@@ -181,51 +186,47 @@ bool ComputeArcGeometry(const Path2DSegmentDto& segment,
     return false;
   }
 
-  const double a0 = std::atan2(from.v - center.v, from.u - center.u);
-  double       a1 = std::atan2(to.v   - center.v, to.u   - center.u);
-
-  double sweep = 0.0;
+  Standard_Boolean sense = Standard_False;
   if (segment.arcDirection == ARC_DIR_CCW) {
-    while (a1 <= a0) a1 += kTwoPi;
-    sweep = a1 - a0;
+    sense = Standard_True;
   } else if (segment.arcDirection == ARC_DIR_CW) {
-    while (a1 >= a0) a1 -= kTwoPi;
-    sweep = a1 - a0;
+    sense = Standard_False;
   } else {
     *outErrorCode = ERROR_INVALID_ARGUMENT;
     return false;
   }
 
-  if (std::fabs(sweep) <= 1.0e-9) {
-    *outErrorCode = ERROR_INVALID_ARGUMENT;
-    return false;
+  gp_Dir circleX(axis.xdir[0], axis.xdir[1], axis.xdir[2]);
+  gp_Dir circleNormal(axis.dir[0], axis.dir[1], axis.dir[2]);
+
+  if (mode == PathFrameMode::kTurnUv) {
+    const gp_Dir uDir(axis.dir[0], axis.dir[1], axis.dir[2]);
+    const gp_Dir vDir(axis.xdir[0], axis.xdir[1], axis.xdir[2]);
+    circleX = uDir;
+    circleNormal = gp_Dir(gp_Vec(uDir).Crossed(gp_Vec(vDir)));
   }
 
-  *outRadius     = r0;
-  *outStartAngle = a0;
-  *outEndAngle   = a0 + sweep;
-  *outErrorCode  = ERROR_OK;
+  *outCircle   = gp_Circ(gp_Ax2(pCenter, circleNormal, circleX), r0);
+  *outFrom     = pFrom;
+  *outTo       = pTo;
+  *outSense    = sense;
+  *outErrorCode = ERROR_OK;
   return true;
 }
 
 bool BuildArcEdge(const Path2DSegmentDto& segment,
                   const AxisDto& axis, PathFrameMode mode,
                   TopoDS_Edge* outEdge, int* outErrorCode) {
-  double radius = 0.0, startAngle = 0.0, endAngle = 0.0;
-  if (!ComputeArcGeometry(segment, &radius, &startAngle, &endAngle, outErrorCode))
+  gp_Circ circle;
+  gp_Pnt pFrom;
+  gp_Pnt pTo;
+  Standard_Boolean sense = Standard_False;
+  if (!ComputeArcGeometry(segment, axis, mode, &circle, &pFrom, &pTo, &sense,
+                          outErrorCode)) {
     return false;
+  }
 
-  const UvPoint from  {segment.from.u,   segment.from.v};
-  const UvPoint to    {segment.to.u,     segment.to.v};
-  const UvPoint center{segment.center.u, segment.center.v};
-  const double  sweep    = endAngle - startAngle;
-  const double  midAngle = startAngle + 0.5 * sweep;
-  const UvPoint mid{center.u + radius * std::cos(midAngle),
-                    center.v + radius * std::sin(midAngle)};
-
-  GC_MakeArcOfCircle arcBuilder(To3DPoint(from, axis, mode),
-                                To3DPoint(mid,  axis, mode),
-                                To3DPoint(to,   axis, mode));
+  GC_MakeArcOfCircle arcBuilder(circle, pFrom, pTo, sense);
   if (!arcBuilder.IsDone()) {
     *outErrorCode = ERROR_BOOLEAN_FAILED;
     return false;
@@ -247,7 +248,8 @@ bool BuildArcEdge(const Path2DSegmentDto& segment,
 // ---------------------------------------------------------------------------
 
 bool ValidateSegments(const Path2DSegmentDto* segments, int segmentCount,
-                      int closed, int* outErrorCode) {
+                      int closed, const AxisDto& axis, PathFrameMode mode,
+                      int* outErrorCode) {
   if (!segments || segmentCount <= 0) {
     *outErrorCode = ERROR_INVALID_ARGUMENT;
     return false;
@@ -272,8 +274,14 @@ bool ValidateSegments(const Path2DSegmentDto* segments, int segmentCount,
         return false;
       }
     } else if (seg.type == PATH_SEGMENT_ARC) {
-      double r = 0.0, a0 = 0.0, a1 = 0.0;
-      if (!ComputeArcGeometry(seg, &r, &a0, &a1, outErrorCode)) return false;
+      gp_Circ circle;
+      gp_Pnt pFrom;
+      gp_Pnt pTo;
+      Standard_Boolean sense = Standard_False;
+      if (!ComputeArcGeometry(seg, axis, mode, &circle, &pFrom, &pTo, &sense,
+                              outErrorCode)) {
+        return false;
+      }
     } else {
       *outErrorCode = ERROR_FEATURE_NOT_SUPPORTED;
       return false;
@@ -294,7 +302,7 @@ bool ValidateSegments(const Path2DSegmentDto* segments, int segmentCount,
 bool BuildFaceFromSegments(const Path2DSegmentDto* segments, int segmentCount,
                            int closed, const AxisDto& axis, PathFrameMode mode,
                            TopoDS_Face* outFace, int* outErrorCode) {
-  if (!ValidateSegments(segments, segmentCount, closed, outErrorCode)) return false;
+  if (!ValidateSegments(segments, segmentCount, closed, axis, mode, outErrorCode)) return false;
   DumpPath2dSegmentsForDebug(segments, segmentCount, mode);
 
   UvPoint current{segments[0].from.u, segments[0].from.v};
@@ -360,7 +368,7 @@ bool BuildTurnTool(const Path2DSegmentDto* segments, int segmentCount, int close
 
   gp_Pnt origin(axis.origin[0], axis.origin[1], axis.origin[2]);
   gp_Dir dir   (axis.dir[0],    axis.dir[1],    axis.dir[2]);
-  BRepPrimAPI_MakeRevol revol(face, gp_Ax1(origin, dir), kTwoPi, true);
+  BRepPrimAPI_MakeRevol revol(face, gp_Ax1(origin, dir), kFullRevolutionRadians, true);
   if (!revol.IsDone()) {
     *outErrorCode = ERROR_BOOLEAN_FAILED;
     return false;
